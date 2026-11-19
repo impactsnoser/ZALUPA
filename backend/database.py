@@ -1,7 +1,30 @@
-import aiosqlite
+import os
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "app.db"
+import aiosqlite
+
+
+def _resolve_db_path() -> Path:
+    """Путь к SQLite.
+
+    Приоритет:
+    1. DB_PATH — явная переменная (например, /data/app.db);
+    2. RAILWAY_VOLUME_MOUNT_PATH — Railway сам подставляет путь смонтированного volume;
+    3. рядом с кодом — локальная разработка.
+    """
+    explicit = os.getenv("DB_PATH", "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+
+    volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+    if volume:
+        return Path(volume) / "app.db"
+
+    return Path(__file__).parent / "app.db"
+
+
+DB_PATH = _resolve_db_path()
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (

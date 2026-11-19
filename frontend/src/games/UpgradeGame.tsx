@@ -21,6 +21,7 @@ export default function UpgradeGame() {
   const [rotation, setRotation] = useState(0);
   const [result, setResult] = useState<UpgradeResult | null>(null);
   const [error, setError] = useState("");
+  const [starterLoading, setStarterLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError("");
@@ -45,6 +46,20 @@ export default function UpgradeGame() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function claimStarter() {
+    if (starterLoading) return;
+    setStarterLoading(true);
+    setError("");
+    try {
+      await api.claimStarter(telegramId);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось получить подарок");
+    } finally {
+      setStarterLoading(false);
+    }
+  }
 
   const fromItem = user?.inventory.find((i) => i.inventory_id === fromId) ?? null;
   const toGift = fromItem && toId !== null ? (gifts.find((g) => g.id === toId && g.price_stars > fromItem.price_stars) ?? null) : null;
@@ -147,7 +162,14 @@ export default function UpgradeGame() {
       </div>
 
       {error && <p className="notice bad">{error}</p>}
-      {user && user.inventory.length === 0 && <p className="notice">Инвентарь пуст, улучшать нечего.</p>}
+      {user && user.inventory.length === 0 && (
+        <div className="notice">
+          <p>Инвентарь пуст — улучшать нечего.</p>
+          <button className="btn primary wide" onClick={claimStarter} disabled={starterLoading}>
+            {starterLoading ? "Выдаём…" : "Получить стартовый подарок"}
+          </button>
+        </div>
+      )}
 
       <button className="btn primary wide" onClick={upgrade} disabled={!fromItem || !toGift || rolling}>
         {rolling ? "Крутим…" : toGift ? `Улучшить с шансом ${fmt(pct)}%` : "Улучшить"}

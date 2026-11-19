@@ -9,6 +9,8 @@
  *   2. VITE_API_URL из окружения сборки;
  *   3. localhost — только для локальной разработки.
  */
+import { tg } from "./telegram";
+
 const DEFAULT_API_URL = "http://localhost:8000";
 const REQUEST_TIMEOUT_MS = 20_000;
 const RETRY_DELAY_MS = 2_000;
@@ -72,6 +74,15 @@ export interface RegisterResult {
   created: boolean;
 }
 
+export interface StarterResult {
+  inventory_id: number;
+  gift_id: number;
+  name: string;
+  price_stars: number;
+  image_url: string | null;
+  is_nft: boolean;
+}
+
 async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_URL}${path}`;
   const controller = new AbortController();
@@ -84,6 +95,8 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
       headers: {
         // Content-Type нужен только для запросов с телом, иначе GET уходит в preflight
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        // Подпись Telegram: бэкенд проверяет её и не доверяет telegram_id из тела
+        ...(tg?.initData ? { "X-Telegram-Init-Data": tg.initData } : {}),
         "ngrok-skip-browser-warning": "1",
         ...(init?.headers as Record<string, string> | undefined),
       },
@@ -161,6 +174,11 @@ export const api = {
     request<RegisterResult>("/api/register", {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId, username }),
+    }),
+  claimStarter: (telegramId: number) =>
+    request<StarterResult>("/api/starter", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId }),
     }),
   upgrade: (body: { telegram_id: number; inventory_id: number; target_gift_id: number }) =>
     request<UpgradeResult>("/api/upgrade", { method: "POST", body: JSON.stringify(body) }),

@@ -1,3 +1,4 @@
+import os
 import secrets
 import sqlite3
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from database import get_connection, init_db, seed_db
+from telegram_auth import get_init_data, verify_telegram_id
 
 MARGIN_COEF = 0.92          # маржа 8%
 RNG_PRECISION = 1_000_000   # точность броска
@@ -22,10 +24,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Gifts Mini App API", lifespan=lifespan)
 
-# На деве разрешаем всё. В проде впиши сюда домен фронта!
+# Домен фронтенда можно задать через FRONTEND_ORIGIN (несколько — через запятую).
+# Пока переменная не задана, разрешаем всё, чтобы не сломать текущий деплой.
+_frontend_origins = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_ORIGIN", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_frontend_origins or ["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,6 +48,33 @@ async def get_db():
         await db.close()
 
 
+async def _cheapest_gift(db: aiosqlite.Connection):
+    cur = await db.execute(
+        "SELECT id, name, price_stars, image_url, is_nft FROM gifts ORDER BY price_stars ASC LIMIT 1"
+    )
+    return await cur.fetchone()
+
+
+async def _grant_starter(db: aiosqlite.Connection, user_id: int):
+    """Кладёт самый дешёвый подарок в инвентарь и возвращает его описание."""
+    gift = await _cheapest_gift(db)
+    if gift is None:
+        return None
+
+    cur = await db.execute(
+        "INSERT INTO inventory (user_id, gift_id) VALUES (?, ?)",
+        (user_id, gift["id"]),
+    )
+    return {
+        "inventory_id": cur.lastrowid,
+        "gift_id": gift["id"],
+        "name": gift["name"],
+        "price_stars": gift["price_stars"],
+        "image_url": gift["image_url"],
+        "is_nft": bool(gift["is_nft"]),
+    }
+
+
 class UpgradeRequest(BaseModel):
     telegram_id: int
     inventory_id: int
@@ -49,6 +84,10 @@ class UpgradeRequest(BaseModel):
 class RegisterRequest(BaseModel):
     telegram_id: int
     username: str | None = None
+
+
+class StarterRequest(BaseModel):
+    telegram_id: int
 
 
 @app.get("/api/health")
@@ -66,7 +105,12 @@ async def list_gifts(db: aiosqlite.Connection = Depends(get_db)):
 
 
 @app.get("/api/user/{telegram_id}")
-async def get_user(telegram_id: int, db: aiosqlite.Connection = Depends(get_db)):
+async def get_user(
+    telegram_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(telegram_id, init_data)
     cur = await db.execute(
         "SELECT id, telegram_id, username, balance_stars, created_at FROM users WHERE telegram_id = ?",
         (telegram_id,),
@@ -91,38 +135,95 @@ async def get_user(telegram_id: int, db: aiosqlite.Connection = Depends(get_db))
 
 
 @app.post("/api/register")
-async def register(req: RegisterRequest, db: aiosqlite.Connection = Depends(get_db)):
+async def register(
+    req: RegisterRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+    init_data: str | None = Depends(get_init_data),
+):
     """Идемпотентная регистрация: создаёт юзера и выдаёт стартовый подарок.
 
     Нужна, чтобы новый Telegram-пользователь не получал 404 и не уходил в демо-режим.
     """
-    cur = await db.execute("SELECT id FROM users WHERE telegram_id = ?", (req.telegram_id,))
-    if await cur.fetchone() is not None:
-        return {"telegram_id": req.telegram_id, "created": False}
+    verify_telegram_id(req.telegram_id, init_data)
 
+    await db.execute("BEGIN IMMEDIATE")
     try:
         cur = await db.execute(
-            "INSERT INTO users (telegram_id, username) VALUES (?, ?)",
-            (req.telegram_id, req.username),
+            "SELECT id FROM users WHERE telegram_id = ?", (req.telegram_id,)
         )
-        user_id = cur.lastrowid
-    except sqlite3.IntegrityError:
-        # параллельный запрос уже создал этого пользователя
-        return {"telegram_id": req.telegram_id, "created": False}
+        if await cur.fetchone() is not None:
+            await db.execute("COMMIT")
+            return {"telegram_id": req.telegram_id, "created": False}
 
-    cur = await db.execute("SELECT id FROM gifts ORDER BY price_stars ASC LIMIT 1")
-    starter = await cur.fetchone()
-    if starter is not None:
-        await db.execute(
-            "INSERT INTO inventory (user_id, gift_id) VALUES (?, ?)",
-            (user_id, starter["id"]),
-        )
+        try:
+            cur = await db.execute(
+                "INSERT INTO users (telegram_id, username) VALUES (?, ?)",
+                (req.telegram_id, req.username),
+            )
+            user_id = cur.lastrowid
+        except sqlite3.IntegrityError:
+            # параллельный запрос уже создал этого пользователя
+            await db.execute("ROLLBACK")
+            return {"telegram_id": req.telegram_id, "created": False}
+
+        await _grant_starter(db, user_id)
+        await db.execute("COMMIT")
+    except Exception:
+        await db.execute("ROLLBACK")
+        raise
 
     return {"telegram_id": req.telegram_id, "created": True}
 
 
+@app.post("/api/starter")
+async def claim_starter(
+    req: StarterRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+    init_data: str | None = Depends(get_init_data),
+):
+    """Выдаёт стартовый подарок, если инвентарь пуст.
+
+    Игрок мог проиграть последний предмет в апгрейде — без этого он бы
+    навсегда остался без возможности играть.
+    """
+    verify_telegram_id(req.telegram_id, init_data)
+
+    await db.execute("BEGIN IMMEDIATE")
+    try:
+        cur = await db.execute(
+            "SELECT id FROM users WHERE telegram_id = ?", (req.telegram_id,)
+        )
+        user = await cur.fetchone()
+        if user is None:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+        cur = await db.execute(
+            "SELECT COUNT(*) AS c FROM inventory WHERE user_id = ?", (user["id"],)
+        )
+        if (await cur.fetchone())["c"] > 0:
+            raise HTTPException(
+                status_code=409, detail="В инвентаре уже есть подарки"
+            )
+
+        gift = await _grant_starter(db, user["id"])
+        if gift is None:
+            raise HTTPException(status_code=404, detail="Каталог подарков пуст")
+
+        await db.execute("COMMIT")
+    except Exception:
+        await db.execute("ROLLBACK")
+        raise
+
+    return gift
+
+
 @app.post("/api/upgrade")
-async def upgrade(req: UpgradeRequest, db: aiosqlite.Connection = Depends(get_db)):
+async def upgrade(
+    req: UpgradeRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(req.telegram_id, init_data)
     # BEGIN IMMEDIATE сразу берёт write-lock: параллельные апгрейды одного предмета встанут в очередь
     await db.execute("BEGIN IMMEDIATE")
     try:
