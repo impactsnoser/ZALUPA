@@ -1,0 +1,10 @@
+{
+  "description": "A Telegram gaming app for playing case games and PvP battles, managing crypto, Stars, and NFT gift deposits, and earning referral rewards.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
