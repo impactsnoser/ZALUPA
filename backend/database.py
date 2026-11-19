@@ -91,13 +91,22 @@ async def seed_db() -> None:
                 (TEST_TELEGRAM_ID, "test_user", 100),
             )
             user_id = cur.lastrowid
-            # стартовый подарок: самый дешёвый
+        else:
+            user_id = user["id"]
+
+        # Демо-данные: тестовому пользователю всегда должно быть что улучшать.
+        # Выдаём стартовый подарок, только если инвентарь пуст (например, после проигрыша).
+        cur = await db.execute(
+            "SELECT COUNT(*) AS c FROM inventory WHERE user_id = ?", (user_id,)
+        )
+        if (await cur.fetchone())["c"] == 0:
             cur = await db.execute("SELECT id FROM gifts ORDER BY price_stars ASC LIMIT 1")
             starter = await cur.fetchone()
-            await db.execute(
-                "INSERT INTO inventory (user_id, gift_id) VALUES (?, ?)",
-                (user_id, starter["id"]),
-            )
+            if starter is not None:
+                await db.execute(
+                    "INSERT INTO inventory (user_id, gift_id) VALUES (?, ?)",
+                    (user_id, starter["id"]),
+                )
     finally:
         await db.close()
 

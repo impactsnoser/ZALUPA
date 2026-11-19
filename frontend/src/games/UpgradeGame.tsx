@@ -25,7 +25,16 @@ export default function UpgradeGame() {
   const load = useCallback(async () => {
     setLoadError("");
     try {
-      const [u, g] = await Promise.all([api.getUser(telegramId), api.getGifts()]);
+      let u: UserProfile;
+      try {
+        u = await api.getUser(telegramId);
+      } catch (e) {
+        // Новый Telegram-пользователь: регистрируем и выдаём стартовый подарок
+        if (!(e instanceof Error) || !e.message.includes("Пользователь не найден")) throw e;
+        await api.register(telegramId, tg?.initDataUnsafe?.user?.username ?? null);
+        u = await api.getUser(telegramId);
+      }
+      const g = await api.getGifts();
       setUser(u);
       setGifts(g);
     } catch (e) {

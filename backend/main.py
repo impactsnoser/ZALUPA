@@ -1,4 +1,5 @@
 import secrets
+import sqlite3
 from contextlib import asynccontextmanager
 
 import aiosqlite
@@ -45,6 +46,17 @@ class UpgradeRequest(BaseModel):
     target_gift_id: int
 
 
+class RegisterRequest(BaseModel):
+    telegram_id: int
+    username: str | None = None
+
+
+@app.get("/api/health")
+async def health():
+    """Проверка живости: Railway healthcheck и ручная диагностика."""
+    return {"status": "ok"}
+
+
 @app.get("/api/gifts")
 async def list_gifts(db: aiosqlite.Connection = Depends(get_db)):
     cur = await db.execute(
@@ -76,6 +88,37 @@ async def get_user(telegram_id: int, db: aiosqlite.Connection = Depends(get_db))
     )
     inventory = [{**dict(r), "is_nft": bool(r["is_nft"])} for r in await cur.fetchall()]
     return {**dict(user), "inventory": inventory}
+
+
+@app.post("/api/register")
+async def register(req: RegisterRequest, db: aiosqlite.Connection = Depends(get_db)):
+    """Идемпотентная регистрация: создаёт юзера и выдаёт стартовый подарок.
+
+    Нужна, чтобы новый Telegram-пользователь не получал 404 и не уходил в демо-режим.
+    """
+    cur = await db.execute("SELECT id FROM users WHERE telegram_id = ?", (req.telegram_id,))
+    if await cur.fetchone() is not None:
+        return {"telegram_id": req.telegram_id, "created": False}
+
+    try:
+        cur = await db.execute(
+            "INSERT INTO users (telegram_id, username) VALUES (?, ?)",
+            (req.telegram_id, req.username),
+        )
+        user_id = cur.lastrowid
+    except sqlite3.IntegrityError:
+        # параллельный запрос уже создал этого пользователя
+        return {"telegram_id": req.telegram_id, "created": False}
+
+    cur = await db.execute("SELECT id FROM gifts ORDER BY price_stars ASC LIMIT 1")
+    starter = await cur.fetchone()
+    if starter is not None:
+        await db.execute(
+            "INSERT INTO inventory (user_id, gift_id) VALUES (?, ?)",
+            (user_id, starter["id"]),
+        )
+
+    return {"telegram_id": req.telegram_id, "created": True}
 
 
 @app.post("/api/upgrade")
@@ -152,3 +195,12 @@ async def upgrade(req: UpgradeRequest, db: aiosqlite.Connection = Depends(get_db
         "chance": round(chance, 6),  # шанс 0..1
         "new_inventory_id": new_inventory_id,
     }
+
+
+if __name__ == "__main__":
+    # Локальный запуск и любой хостинг с переменной PORT (Railway, Render и т.п.)
+    import os
+
+    import uvicorn
+
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
