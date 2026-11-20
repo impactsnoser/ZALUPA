@@ -19,11 +19,11 @@ export function PrizeArt({ prize, size = 64 }: { prize: Prize; size?: number }) 
   );
 }
 
-// Ширина и отступ должны совпадать с .showcase-item в index.css (flex-basis 168px).
-// Иначе центр выигрышного предмета не совпадёт с центром витрины.
+// Размер карточки и отступ должны совпадать с CSS; лента движется сверху вниз.
 const ITEM_W = 168;
+const ITEM_H = 112;
 const GAP = 8;
-const STEP = ITEM_W + GAP;
+const STEP = ITEM_H + GAP;
 const REEL_LEN = 46;
 const WIN_AT = 38;
 const ACTIVE_AT = 2;
@@ -79,7 +79,7 @@ export default function CaseModal({
   const [selected, setSelected] = useState(0);
   const [activeSlot, setActiveSlot] = useState(ACTIVE_AT);
 
-  const centerOffset = (i: number) => i * STEP + ITEM_W / 2 - (viewport.current?.clientWidth ?? 320) / 2;
+  const centerOffset = (i: number) => i * STEP + ITEM_H / 2 - (viewport.current?.clientHeight ?? 280) / 2;
 
   function selectPrize(next: number) {
     if (phase === "spinning") return;
@@ -141,7 +141,7 @@ export default function CaseModal({
     setX(centerOffset(ACTIVE_AT));
     // Небольшой сдвиг, чтобы остановка выглядела естественно, но выигрышный
     // предмет всё равно оставался в центре витрины.
-    const jitter = (Math.random() - 0.5) * ITEM_W * 0.3;
+    const jitter = (Math.random() - 0.5) * ITEM_H * 0.3;
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         setAnimating(true);
@@ -181,7 +181,7 @@ export default function CaseModal({
         <div
           className="showcase-track"
           style={{
-            transform: `translate3d(${-x}px,0,0)`,
+            transform: `translate3d(0,${-x}px,0)`,
             transition: animating ? `transform ${SPIN_MS}ms cubic-bezier(0.1, 0.72, 0.12, 1)` : "none",
           }}
         >
@@ -190,7 +190,7 @@ export default function CaseModal({
               key={`${p.id}-${i}`}
               className={`showcase-item${i === activeSlot ? " active" : ""}`}
               data-r={rarityOf(p.value)}
-              style={{ width: ITEM_W, marginRight: GAP }}
+              style={{ width: ITEM_W, height: ITEM_H, marginBottom: GAP }}
             >
               <PrizeArt prize={p} size={60} />
               <b>{p.name}</b><small>{fmt(p.value)} TON</small>
@@ -203,7 +203,7 @@ export default function CaseModal({
           disabled={spinning}
           aria-label="Предыдущий предмет"
         >
-          ←
+          →
         </button>
         <button
           className="showcase-arrow right"
@@ -211,7 +211,7 @@ export default function CaseModal({
           disabled={spinning}
           aria-label="Следующий предмет"
         >
-          →
+          ←
         </button>
       </div>
 
