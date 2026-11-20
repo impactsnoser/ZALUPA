@@ -32,7 +32,13 @@ STARS_PER_TON = max(1, _env_int("STARS_PER_TON", 100))
 WELCOME_STARS = max(0, _env_int("WELCOME_STARS", 1000))
 
 # Пополнение TON: адрес кошелька проекта и API для проверки переводов.
-TON_DEPOSIT_ADDRESS = os.getenv("TON_DEPOSIT_ADDRESS", "").strip()
+# Адрес публичный (не секрет), поэтому оставлен значением по умолчанию.
+# Переопределяется переменной TON_DEPOSIT_ADDRESS в Railway.
+DEFAULT_TON_DEPOSIT_ADDRESS = "UQAP1JBLqJOfcGsea2AyTXz9e-rYAO1NKo66_iKqR6P_FbTy"
+TON_DEPOSIT_ADDRESS = (
+    os.getenv("TON_DEPOSIT_ADDRESS", DEFAULT_TON_DEPOSIT_ADDRESS).strip()
+    or DEFAULT_TON_DEPOSIT_ADDRESS
+)
 TONCENTER_BASE = os.getenv("TONCENTER_BASE", "https://toncenter.com/api/v2").strip()
 TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY", "").strip()
 TON_DEPOSIT_TTL_SECONDS = max(300, _env_int("TON_DEPOSIT_TTL_SECONDS", 3600))

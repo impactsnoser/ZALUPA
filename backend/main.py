@@ -23,6 +23,7 @@ from database import (
     seed_db,
 )
 from telegram_auth import get_init_data, verify_telegram_id
+from games import router as games_router
 from wallet import configure_webhook, router as wallet_router
 
 MARGIN_COEF = 0.92          # маржа 8%
@@ -55,6 +56,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(wallet_router)
+app.include_router(games_router)
 
 
 class UpgradeRequest(BaseModel):

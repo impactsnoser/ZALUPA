@@ -207,6 +207,58 @@ class Payment(Base):
     )
 
 
+class MinesSession(Base):
+    """Серверная партия в «Мины»: клиент не знает, где мины."""
+
+    __tablename__ = "mines_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    bet_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    mines_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Позиции храним строкой "1,7,13": так одинаково работает SQLite и Postgres.
+    mine_positions: Mapped[str] = mapped_column(String, nullable=False)
+    opened_positions: Mapped[str] = mapped_column(String, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    payout_stars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class RocketSession(Base):
+    """Серверная партия в «Ракетку»: точка падения задаётся на сервере."""
+
+    __tablename__ = "rocket_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    bet_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    crash_milli: Mapped[int] = mapped_column(Integer, nullable=False)
+    cashout_milli: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    payout_stars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 SEED_GIFTS = [
     # name, price_stars, image_url, is_nft
     ("Мишка", 15, "https://example.com/img/bear.png", False),

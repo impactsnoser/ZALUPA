@@ -48,18 +48,6 @@ WEBHOOK_PATH = "/telegram/webhook"
 # ---------------------------------------------------------------- модели API
 
 
-class SpendRequest(BaseModel):
-    telegram_id: int
-    amount_stars: int = Field(ge=1, le=10_000_000)
-    label: str = Field(default="Игра", max_length=120)
-
-
-class CreditRequest(BaseModel):
-    telegram_id: int
-    amount_stars: int = Field(ge=1, le=10_000_000)
-    label: str = Field(default="Выигрыш", max_length=120)
-
-
 class StarsDepositRequest(BaseModel):
     telegram_id: int
     stars: int = Field(ge=MIN_STARS_DEPOSIT, le=MAX_STARS_DEPOSIT)
@@ -280,61 +268,6 @@ async def get_wallet(
         "ton_deposit_enabled": bool(TON_DEPOSIT_ADDRESS),
         "ton_address": TON_DEPOSIT_ADDRESS or None,
         "transactions": [_tx_dict(tx) for tx in transactions],
-    }
-
-
-@router.post("/wallet/spend")
-async def spend(
-    req: SpendRequest,
-    session: AsyncSession = Depends(get_session),
-    init_data: str | None = Depends(get_init_data),
-):
-    """Списывает ставку. Пока игры считаются на клиенте, это защита от
-    отрицательного баланса, но не от подделки результата. Перенос игр на
-    сервер — следующий этап."""
-    verify_telegram_id(req.telegram_id, init_data)
-
-    async with session.begin():
-        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
-        if user.balance_stars < req.amount_stars:
-            raise HTTPException(status_code=400, detail="Недостаточно средств")
-        user.balance_stars -= req.amount_stars
-        _add_transaction(
-            session,
-            user,
-            amount=-req.amount_stars,
-            kind="bet",
-            label=req.label,
-        )
-
-    return {
-        "balance_stars": user.balance_stars,
-        "balance_ton": stars_to_ton(user.balance_stars),
-    }
-
-
-@router.post("/wallet/credit")
-async def credit(
-    req: CreditRequest,
-    session: AsyncSession = Depends(get_session),
-    init_data: str | None = Depends(get_init_data),
-):
-    verify_telegram_id(req.telegram_id, init_data)
-
-    async with session.begin():
-        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
-        user.balance_stars += req.amount_stars
-        _add_transaction(
-            session,
-            user,
-            amount=req.amount_stars,
-            kind="win",
-            label=req.label,
-        )
-
-    return {
-        "balance_stars": user.balance_stars,
-        "balance_ton": stars_to_ton(user.balance_stars),
     }
 
 
