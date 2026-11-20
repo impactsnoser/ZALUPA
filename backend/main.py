@@ -24,7 +24,7 @@ from database import (
 )
 from telegram_auth import get_init_data, verify_telegram_id
 from games import router as games_router
-from wallet import _user_by_telegram_id, configure_webhook, router as wallet_router
+from wallet import _add_transaction, _user_by_telegram_id, configure_webhook, router as wallet_router, stars_to_ton
 
 MARGIN_COEF = 0.92          # маржа 8%
 RNG_PRECISION = 1_000_000   # точность броска

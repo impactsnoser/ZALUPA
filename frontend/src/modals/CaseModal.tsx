@@ -14,7 +14,12 @@ export function PrizeArt({ prize, size = 64 }: { prize: Prize; size?: number }) 
       {failed ? (
         <span style={{ fontSize: size * 0.62 }}>{prize.emoji}</span>
       ) : (
-        <img src={`/prizes/${prize.image}`} alt="" draggable={false} onError={() => setFailed(true)} />
+        <img
+          src={`/prizes/${prize.image}`}
+          alt=""
+          draggable={false}
+          onError={() => setFailed(true)}
+        />
       )}
     </span>
   );
@@ -48,7 +53,10 @@ export default function CaseModal({
   const sorted = useMemo(() => [...def.prizes].sort((a, b) => b.value - a.value), [def]);
   const viewport = useRef<HTMLDivElement>(null);
 
-  const idleReel = useMemo(() => Array.from({ length: REEL_LEN }, (_, i) => sorted[(i * 5) % sorted.length]), [sorted]);
+  const idleReel = useMemo(
+    () => Array.from({ length: REEL_LEN }, (_, i) => sorted[(i * 5) % sorted.length]),
+    [sorted],
+  );
   const [reel, setReel] = useState<Prize[]>(idleReel);
   const [x, setX] = useState(0);
   const [animating, setAnimating] = useState(false);
@@ -56,7 +64,7 @@ export default function CaseModal({
   const [prize, setPrize] = useState<Prize | null>(null);
   const [needDeposit, setNeedDeposit] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [caseResult, setCaseResult] = useState<{ prize_stars: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const centerOffset = (i: number) => i * STEP + ITEM_W / 2 - (viewport.current?.clientWidth ?? 320) / 2;
 
@@ -71,16 +79,16 @@ export default function CaseModal({
       return;
     }
     setNeedDeposit(false);
+    setError(null);
     setBusy(true);
 
-    // Определяем приз на сервере: там же списывается ставка и предмет
-    // кладётся в инвентарь. Клиент не может подделать результат.
-    let serverResult: any;
+    let serverResult: { prize: Prize; bet_stars: number; balance_stars: number; prize_stars: number };
     try {
       serverResult = await api.openCase(telegramId, def.id);
     } catch (err) {
       setBusy(false);
-      throw err;
+      setError(err instanceof Error ? err.message : "Не удалось открыть кейс");
+      return;
     }
 
     const won = serverResult.prize;
@@ -103,19 +111,17 @@ export default function CaseModal({
     window.setTimeout(() => {
       setPrize(won);
       setPhase("done");
-      setCaseResult(serverResult);
       setBusy(false);
-      // Обновляем баланс и инвентарь в родителе.
       void onCredited();
       tg?.HapticFeedback?.notificationOccurred(won.value >= def.price ? "success" : "warning");
     }, SPIN_MS + 150);
   }
 
   const spinning = phase === "spinning";
-  const diff = prize ? prize.value - def.price : 0;
 
   return (
     <Sheet title={def.title} onClose={onClose} locked={spinning} tall>
+      {error && <p className="notice bad">{error}</p>}
       <div className="reel" ref={viewport}>
         <div
           className="reel-track"
@@ -138,14 +144,12 @@ export default function CaseModal({
         <div className="reel-pointer" />
       </div>
 
-      {phase === "done" && prize && caseResult && (
+      {phase === "done" && prize && (
         <div className="case-done">
           <div className="case-prize">
             <PrizeArt prize={prize} size={80} />
             <div className="case-prize-name">{prize.name}</div>
-            <div className="case-prize-value">
-              {fmt(prize.value)} ◆ ≈ {caseResult.prize_stars} ⭐
-            </div>
+            <div className="case-prize-value">{fmt(prize.value)} ◆</div>
             <div className="case-prize-msg">Предмет добавлен в инвентарь</div>
           </div>
           <button className="btn primary wide" onClick={onClose}>
