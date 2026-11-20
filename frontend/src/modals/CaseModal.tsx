@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { getCase, type Prize } from "../data/cases";
-import { fmt, rarityOf } from "../lib/format";
+import { chanceOf, getCase, paybackChance, rtpOf, type Prize } from "../data/cases";
+import { fmt, fmtChance, rarityOf } from "../lib/format";
 import { tg } from "../telegram";
 import { Ton } from "../ui/Icons";
 import Sheet from "../ui/Sheet";
@@ -14,12 +14,7 @@ export function PrizeArt({ prize, size = 64 }: { prize: Prize; size?: number }) 
       {failed ? (
         <span style={{ fontSize: size * 0.62 }}>{prize.emoji}</span>
       ) : (
-        <img
-          src={`/prizes/${prize.image}`}
-          alt=""
-          draggable={false}
-          onError={() => setFailed(true)}
-        />
+        <img src={`/prizes/${prize.image}`} alt="" draggable={false} onError={() => setFailed(true)} />
       )}
     </span>
   );
@@ -33,6 +28,14 @@ const WIN_AT = 38;
 const SPIN_MS = 5200;
 
 type Phase = "idle" | "spinning" | "done";
+
+type OpenCaseResponse = {
+  prize: Prize;
+  bet_stars: number;
+  prize_stars: number;
+  balance_stars: number;
+  balance_ton: number;
+};
 
 export default function CaseModal({
   caseId,
@@ -62,6 +65,7 @@ export default function CaseModal({
   const [animating, setAnimating] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [prize, setPrize] = useState<Prize | null>(null);
+  const [prizeStars, setPrizeStars] = useState(0);
   const [needDeposit, setNeedDeposit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,22 +86,26 @@ export default function CaseModal({
     setError(null);
     setBusy(true);
 
-    let serverResult: { prize: Prize; bet_stars: number; balance_stars: number; prize_stars: number };
+    // Результат считает сервер: он же списывает ставку и кладёт предмет
+    // в инвентарь. Клиент не может подделать приз через консоль.
+    let result: OpenCaseResponse;
     try {
-      serverResult = await api.openCase(telegramId, def.id);
+      result = await api.openCase(telegramId, def.id);
     } catch (err) {
       setBusy(false);
       setError(err instanceof Error ? err.message : "Не удалось открыть кейс");
       return;
     }
 
-    const won = serverResult.prize;
+    const won = result.prize;
     const next = Array.from({ length: REEL_LEN }, (_, i) =>
       i === WIN_AT ? won : sorted[Math.floor(Math.random() * sorted.length)],
     );
     setPrize(null);
+    setPrizeStars(result.prize_stars);
     setPhase("spinning");
     tg?.HapticFeedback?.impactOccurred("medium");
+    // сброс в начало без анимации, затем запуск
     setAnimating(false);
     setReel(next);
     setX(centerOffset(2));
@@ -112,16 +120,19 @@ export default function CaseModal({
       setPrize(won);
       setPhase("done");
       setBusy(false);
+      // Обновляем баланс и историю в родителе.
       void onCredited();
       tg?.HapticFeedback?.notificationOccurred(won.value >= def.price ? "success" : "warning");
     }, SPIN_MS + 150);
   }
 
   const spinning = phase === "spinning";
+  const diff = prize ? prize.value - def.price : 0;
 
   return (
     <Sheet title={def.title} onClose={onClose} locked={spinning} tall>
       {error && <p className="notice bad">{error}</p>}
+
       <div className="reel" ref={viewport}>
         <div
           className="reel-track"
@@ -133,52 +144,80 @@ export default function CaseModal({
           {reel.map((p, i) => (
             <div
               key={`${p.id}-${i}`}
-              className={`slot ${i === WIN_AT ? "filled" : ""}`}
-              style={{ transform: `translateY(${i * STEP}px)` }}
+              className="reel-item"
+              data-r={rarityOf(p.value)}
+              style={{ width: ITEM_W, marginRight: GAP }}
             >
-              <PrizeArt prize={p} size={64} />
-              <div className="slot-hint">{p.name}</div>
+              <PrizeArt prize={p} size={60} />
+              <span className="reel-val">
+                <Ton size={12} />
+                {fmt(p.value)}
+              </span>
             </div>
           ))}
         </div>
-        <div className="reel-pointer" />
+        <i className="reel-laser" />
+        <i className="reel-fade left" />
+        <i className="reel-fade right" />
       </div>
 
-      {phase === "done" && prize && (
-        <div className="case-done">
-          <div className="case-prize">
-            <PrizeArt prize={prize} size={80} />
-            <div className="case-prize-name">{prize.name}</div>
-            <div className="case-prize-value">{fmt(prize.value)} ◆</div>
-            <div className="case-prize-msg">Предмет добавлен в инвентарь</div>
-          </div>
-          <button className="btn primary wide" onClick={onClose}>
-            Забрать
-          </button>
-        </div>
-      )}
+      <div className="drop-result" aria-live="polite">
+        {prize ? (
+          <>
+            <strong>{prize.name}</strong>
+            <span className={diff >= 0 ? "plus" : "minus"}>
+              {diff >= 0 ? "В плюсе на " : "В минусе на "}
+              {fmt(Math.abs(diff))}
+            </span>
+            <small>
+              ≈ {prizeStars} ⭐. Предмет добавлен в инвентарь — продать или вывести его можно в профиле.
+            </small>
+          </>
+        ) : (
+          <span className="muted">
+            {spinning ? "Крутим…" : "Нажми «Открыть», и сервер выберет приз"}
+          </span>
+        )}
+      </div>
 
-      {phase === "idle" && (
-        <div className="case-controls">
-          {needDeposit && (
-            <p className="notice bad">Недостаточно средств. Пополните баланс.</p>
-          )}
-          {!needDeposit && (
+      {needDeposit ? (
+        <button className="btn primary wide" onClick={onDeposit}>
+          Пополнить баланс
+        </button>
+      ) : (
+        <button className="btn primary wide" onClick={open} disabled={spinning || busy}>
+          {spinning ? "Крутим…" : phase === "done" ? "Открыть ещё раз за" : "Открыть за"}
+          {!spinning && (
             <>
-              <div className="case-bet">
-                <small>Ставка</small>
-                <b>{fmt(def.price)} ◆</b>
-              </div>
-              <button className="btn primary wide" onClick={open} disabled={busy}>
-                {busy ? "Крутим…" : "Открыть кейс"}
-              </button>
+              <Ton size={16} />
+              {fmt(def.price)}
             </>
           )}
-          <button className="link-btn" onClick={onDeposit}>
-            Пополнить баланс
-          </button>
-        </div>
+        </button>
       )}
+
+      <h3 className="sub-title">Что может выпасть</h3>
+      <div className="prize-grid">
+        {sorted.map((p) => (
+          <div
+            key={p.id}
+            className={`prize-tile${prize?.id === p.id && phase === "done" ? " hit" : ""}`}
+            data-r={rarityOf(p.value)}
+          >
+            <span className="prize-tile-val">
+              <Ton size={11} />
+              {fmt(p.value)}
+            </span>
+            <PrizeArt prize={p} size={52} />
+            <span className="prize-tile-chance">{fmtChance(chanceOf(p))}%</span>
+          </div>
+        ))}
+      </div>
+      <p className="fine">
+        Шансы показаны так, как работает розыгрыш на сервере. Возврат игроку{" "}
+        {rtpOf(def).toFixed(1).replace(".", ",")}%, шанс получить приз не меньше цены кейса{" "}
+        {paybackChance(def).toFixed(2).replace(".", ",")}%.
+      </p>
     </Sheet>
   );
 }

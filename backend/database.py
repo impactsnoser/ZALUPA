@@ -277,26 +277,67 @@ SEED_GIFTS = [
 ]
 
 
+async def _migrate_inventory(connection) -> None:
+    """Догоняем схему inventory для баз, созданных до появления призов из кейсов.
+
+    create_all не меняет уже существующие таблицы, поэтому:
+    * добавляем колонки prize_* для призов, которых нет в каталоге подарков;
+    * снимаем NOT NULL с gift_id: у приза из кейса подарка нет.
+
+    Без второго пункта вставка приза падает с ошибкой NOT NULL, и кейс
+    «не открывается» (сервер отвечает 500).
+    """
+    if connection.dialect.name == "postgresql":
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE inventory
+                ADD COLUMN IF NOT EXISTS prize_name VARCHAR,
+                ADD COLUMN IF NOT EXISTS prize_value_stars INTEGER,
+                ADD COLUMN IF NOT EXISTS prize_image_url VARCHAR,
+                ADD COLUMN IF NOT EXISTS prize_emoji VARCHAR
+                """
+            )
+        )
+        await connection.execute(
+            text("ALTER TABLE inventory ALTER COLUMN gift_id DROP NOT NULL")
+        )
+        return
+
+    # SQLite: ALTER TABLE не умеет IF NOT EXISTS — проверяем колонки вручную.
+    rows = (await connection.execute(text("PRAGMA table_info(inventory)"))).all()
+    existing = {row[1]: row for row in rows}
+    for column, ddl in (
+        ("prize_name", "VARCHAR"),
+        ("prize_value_stars", "INTEGER"),
+        ("prize_image_url", "VARCHAR"),
+        ("prize_emoji", "VARCHAR"),
+    ):
+        if column not in existing:
+            await connection.execute(
+                text(f"ALTER TABLE inventory ADD COLUMN {column} {ddl}")
+            )
+
+    # В старых локальных базах gift_id объявлен NOT NULL. SQLite не умеет
+    # менять ограничение через ALTER, поэтому пересобираем таблицу.
+    gift_id = existing.get("gift_id")
+    if gift_id is None or not gift_id[3]:
+        return
+
+    await connection.execute(text("DROP INDEX IF EXISTS ix_inventory_user_id"))
+    await connection.execute(text("ALTER TABLE inventory RENAME TO inventory_legacy"))
+    await connection.run_sync(lambda sync_conn: InventoryItem.__table__.create(sync_conn))
+    columns = ", ".join(column.name for column in InventoryItem.__table__.columns)
+    await connection.execute(
+        text(f"INSERT INTO inventory ({columns}) SELECT {columns} FROM inventory_legacy")
+    )
+    await connection.execute(text("DROP TABLE inventory_legacy"))
+
+
 async def init_db() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-        # Добавляем колонки для призов из кейсов в существующие таблицы.
-        # PostgreSQL поддерживает ADD COLUMN IF NOT EXISTS, SQLite — нет,
-        # поэтому на SQLite просто пропускаем ошибку (колонки уже есть в модели).
-        try:
-            await connection.execute(
-                text(
-                    """
-                    ALTER TABLE inventory
-                    ADD COLUMN IF NOT EXISTS prize_name VARCHAR,
-                    ADD COLUMN IF NOT EXISTS prize_value_stars INTEGER,
-                    ADD COLUMN IF NOT EXISTS prize_image_url VARCHAR,
-                    ADD COLUMN IF NOT EXISTS prize_emoji VARCHAR
-                    """
-                )
-            )
-        except Exception:
-            pass
+        await _migrate_inventory(connection)
 
 
 async def seed_db() -> None:

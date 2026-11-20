@@ -9,6 +9,7 @@
  *   2. VITE_API_URL из окружения сборки;
  *   3. localhost — только для локальной разработки.
  */
+import type { Prize } from "./data/cases";
 import { tg } from "./telegram";
 
 const DEFAULT_API_URL = "http://localhost:8000";
@@ -281,7 +282,13 @@ export const api = {
   getInventory: (telegramId: number) =>
     request<InventoryList>(`/api/inventory/${telegramId}`),
   openCase: (telegramId: number, caseId: string) =>
-    request<{ prize: any; bet_stars: number; balance_stars: number; prize_stars: number }>("/api/cases/open", {
+    request<{
+      prize: Prize;
+      bet_stars: number;
+      prize_stars: number;
+      balance_stars: number;
+      balance_ton: number;
+    }>("/api/cases/open", {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId, case_id: caseId }),
     }),
