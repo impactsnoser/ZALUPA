@@ -28,7 +28,7 @@ const REEL_LEN = 46;
 const WIN_AT = 12;
 const SPIN_START_AT = 38;
 const ACTIVE_AT = 2;
-const SPIN_MS = 5200;
+const SPIN_MS = 3600;
 
 type Phase = "idle" | "spinning" | "done";
 
@@ -153,9 +153,9 @@ export default function CaseModal({
       setPrize(won);
       setPhase("done");
       setBusy(false);
-        const wonIndex = sorted.findIndex((item) => item.id === won.id);
-        setSelected(wonIndex);
-        setActiveSlot(ACTIVE_AT);
+      const wonIndex = sorted.findIndex((item) => item.id === won.id);
+      setSelected(wonIndex);
+      setActiveSlot(ACTIVE_AT);
         setAnimating(false);
         setReel(makeReel(wonIndex));
         setX(centerOffset(ACTIVE_AT));
@@ -186,9 +186,11 @@ export default function CaseModal({
         <span className="showcase-index bottom">{String(bottomIndex).padStart(2, "0")}</span>
         <div
           className="showcase-track"
+          aria-hidden={phase === "done"}
           style={{
             transform: `translate3d(0,${-x}px,0)`,
             transition: animating ? `transform ${SPIN_MS}ms cubic-bezier(0.1, 0.72, 0.12, 1)` : "none",
+            visibility: phase === "done" ? "hidden" : "visible",
           }}
         >
           {reel.map((p, i) => (
@@ -203,6 +205,13 @@ export default function CaseModal({
             </div>
           ))}
         </div>
+        {phase === "done" && prize && (
+          <div className="showcase-result-item" aria-label={`Выпал предмет: ${prize.name}`}>
+            <PrizeArt prize={prize} size={64} />
+            <b>{prize.name}</b>
+            <small>{fmt(prize.value)} TON</small>
+          </div>
+        )}
         <button
           className="showcase-arrow left"
           onClick={() => selectPrize(selected - 1)}
