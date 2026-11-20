@@ -25,7 +25,8 @@ const ITEM_H = 112;
 const GAP = 8;
 const STEP = ITEM_H + GAP;
 const REEL_LEN = 46;
-const WIN_AT = 38;
+const WIN_AT = 12;
+const SPIN_START_AT = 38;
 const ACTIVE_AT = 2;
 const SPIN_MS = 5200;
 
@@ -138,7 +139,7 @@ export default function CaseModal({
     // сброс в начало без анимации, затем запуск
     setAnimating(false);
     setReel(next);
-    setX(centerOffset(ACTIVE_AT));
+    setX(centerOffset(SPIN_START_AT));
     // Небольшой сдвиг, чтобы остановка выглядела естественно, но выигрышный
     // предмет всё равно оставался в центре витрины.
     const jitter = (Math.random() - 0.5) * ITEM_H * 0.3;
@@ -152,7 +153,12 @@ export default function CaseModal({
       setPrize(won);
       setPhase("done");
       setBusy(false);
-      setSelected(sorted.findIndex((item) => item.id === won.id));
+        const wonIndex = sorted.findIndex((item) => item.id === won.id);
+        setSelected(wonIndex);
+        setActiveSlot(ACTIVE_AT);
+        setAnimating(false);
+        setReel(makeReel(wonIndex));
+        setX(centerOffset(ACTIVE_AT));
       // Обновляем баланс и историю в родителе.
       void onCredited();
       tg?.HapticFeedback?.notificationOccurred(won.value >= def.price ? "success" : "warning");

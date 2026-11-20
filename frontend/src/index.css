@@ -358,7 +358,7 @@ small { font-size: 12px; }
 .showcase-track { display: flex; flex-direction: column; align-items: center; width: 100%; will-change: transform; }
 .showcase-item { flex: 0 0 112px; width: 168px; height: 112px; display: grid; align-content: center; justify-items: center; gap: 1px; margin: 0 0 8px; padding: 5px; border: 1px solid color-mix(in srgb, var(--rc) 42%, transparent); border-radius: 18px; background: radial-gradient(80% 70% at 50% 40%, color-mix(in srgb, var(--rc) 28%, transparent), transparent), var(--felt-2); color: var(--snow); }
 .showcase-item .prize-art { width: 64px !important; height: 64px !important; }
-.showcase-item:not(.active) { opacity: .42; transform: scale(.82); }
+.showcase-item:not(.active) { opacity: .72; transform: scale(.86); }
 .showcase-item.active { border-color: color-mix(in srgb, var(--rc) 65%, var(--foil)); box-shadow: 0 12px 30px -18px var(--rc), inset 0 1px 0 rgba(255,255,255,.08); }
 .showcase-item b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .showcase-item small { color: var(--snow-dim); font-size: 9px; letter-spacing: 1px; }
