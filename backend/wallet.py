@@ -63,6 +63,11 @@ class TonCheckRequest(BaseModel):
     payment_id: int
 
 
+class TonConnectDepositRequest(BaseModel):
+    telegram_id: int
+    amount: float = Field(ge=MIN_TON_DEPOSIT, le=MAX_TON_DEPOSIT)
+
+
 class SpendRequest(BaseModel):
     telegram_id: int
     amount_stars: int = Field(ge=1, le=10_000_000)
@@ -528,6 +533,86 @@ async def deposit_ton(
         result = _ton_payment_dict(payment)
 
     return result
+
+
+@router.post("/deposits")
+async def create_tonconnect_deposit(
+    req: TonConnectDepositRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    """Create a TON transfer request for TON Connect; auth is bound to signed initData."""
+    verify_telegram_id(req.telegram_id, init_data)
+    if not TON_DEPOSIT_ADDRESS:
+        raise HTTPException(status_code=503, detail="TON_DEPOSIT_ADDRESS не настроен")
+    amount_nano = int(round(req.amount * 1_000_000_000))
+    amount_stars = max(1, int(round(req.amount * STARS_PER_TON)))
+    deposit_id = f"nx{secrets.token_hex(12)}"
+    async with session.begin():
+        user = await _user_by_telegram_id(session, req.telegram_id)
+        payment = Payment(
+            user_id=user.id,
+            provider="ton",
+            amount_stars=amount_stars,
+            amount_native=amount_nano,
+            status="pending",
+            payload=deposit_id,
+        )
+        session.add(payment)
+        await session.flush()
+        payment_id = payment.id
+    # TON text comment cell: 32-bit zero opcode followed by UTF-8 deposit id.
+    from tonsdk.boc import begin_cell
+    comment_boc = begin_cell().store_uint(0, 32).store_string(deposit_id).end_cell().to_boc(False).hex()
+    return {
+        "depositId": str(payment_id),
+        "transaction": {
+            "network": "-239",
+            "validUntil": int((datetime.now(timezone.utc) + timedelta(seconds=TON_DEPOSIT_TTL_SECONDS)).timestamp()),
+            "messages": [{"address": TON_DEPOSIT_ADDRESS, "amount": str(amount_nano), "payload": base64.b64encode(bytes.fromhex(comment_boc)).decode("ascii")}],
+        },
+        "comment": deposit_id,
+        "amountNano": str(amount_nano),
+        "amountStars": amount_stars,
+    }
+
+
+@router.get("/deposits/{deposit_id}")
+async def get_tonconnect_deposit(
+    deposit_id: str,
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(telegram_id, init_data)
+    try:
+        payment_id = int(deposit_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Депозит не найден") from exc
+    payment = await session.scalar(select(Payment).where(
+        Payment.id == payment_id, Payment.provider == "ton",
+        Payment.user_id.in_(select(User.id).where(User.telegram_id == telegram_id)),
+    ))
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Депозит не найден")
+    if payment.status == "paid":
+        return {"status": "credited", "balance_stars": (await _user_by_telegram_id(session, telegram_id)).balance_stars}
+    if payment.status == "pending" and _is_expired(payment):
+        payment.status = "expired"
+        await session.commit()
+        return {"status": "expired"}
+    created = payment.created_at
+    if created and created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    transfer = await _find_ton_transfer(TON_DEPOSIT_ADDRESS, payment.payload, payment.amount_native, int(created.timestamp()) if created else 0)
+    if transfer:
+        payment = await session.get(Payment, payment_id, with_for_update=True)
+        if payment and payment.status == "pending":
+            await _credit_payment(session, payment, transfer["hash"])
+            await session.commit()
+        user = await _user_by_telegram_id(session, telegram_id)
+        return {"status": "credited", "balance_stars": user.balance_stars}
+    return {"status": "pending"}
 
 
 @router.post("/wallet/deposit/ton/check")

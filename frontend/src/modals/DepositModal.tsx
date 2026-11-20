@@ -4,6 +4,7 @@ import { fmt } from "../lib/format";
 import { tg } from "../telegram";
 import { Glyph, Ton } from "../ui/Icons";
 import Sheet from "../ui/Sheet";
+import { useTonConnectUI, useTonWallet } from "@tonconnect/ui-react";
 
 type Method = "stars" | "ton";
 
@@ -35,6 +36,10 @@ export default function DepositModal({
   const [done, setDone] = useState<{ stars: number; ton: number } | null>(null);
   const [pendingStars, setPendingStars] = useState<StarsInvoice | null>(null);
   const [tonInvoice, setTonInvoice] = useState<TonInvoice | null>(null);
+  const [tonConnectUI] = useTonConnectUI();
+  const tonWallet = useTonWallet();
+  const [depositId, setDepositId] = useState<string | null>(null);
+  const [depositStars, setDepositStars] = useState(0);
 
   const tonRate = starsPerTon > 0 ? starsPerTon : 100;
 
@@ -124,6 +129,39 @@ export default function DepositModal({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function createWalletDeposit() {
+    if (!tonWallet) { await tonConnectUI.openModal(); return; }
+    setBusy(true); setError(""); setNote("");
+    try {
+      const deposit = await api.createDeposit(telegramId, amount);
+      setDepositId(deposit.depositId); setDepositStars(deposit.amountStars);
+      await tonConnectUI.sendTransaction(deposit.transaction);
+      setNote("Ожидаем подтверждения в сети TON…");
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        await delay(5000);
+        const status = await api.getDeposit(deposit.depositId, telegramId);
+        if (status.status === "credited") {
+          const wallet = await api.getWallet(telegramId);
+          success(wallet, deposit.amountStars, amount); return;
+        }
+        if (status.status === "expired") { setError("Счёт истёк. Создайте новый депозит."); return; }
+      }
+      setNote("Ожидаем подтверждения. Нажмите «Проверить подтверждение», чтобы обновить статус.");
+    } catch (err) { setError(err instanceof Error ? err.message : "Перевод не подтверждён в кошельке"); }
+    finally { setBusy(false); }
+  }
+
+  async function refreshDepositStatus() {
+    if (!depositId) return;
+    setBusy(true);
+    try {
+      const status = await api.getDeposit(depositId, telegramId);
+      if (status.status === "credited") success(await api.getWallet(telegramId), depositStars, amount);
+      else setNote(status.status === "expired" ? "Счёт истёк." : "Ожидаем подтверждения в сети TON…");
+    } catch (err) { setError(err instanceof Error ? err.message : "Не удалось проверить депозит"); }
+    finally { setBusy(false); }
   }
 
   async function checkTon() {
@@ -251,13 +289,16 @@ export default function DepositModal({
                   </button>
                 </div>
               ) : (
+                <>
                 <button
                   className="btn primary wide"
-                  onClick={createTonInvoice}
+                  onClick={createWalletDeposit}
                   disabled={busy || !tonEnabled}
                 >
-                  {busy ? "Создаём счёт…" : tonEnabled ? `Пополнить на ${amount} ◆` : "TON пока недоступен"}
+                  {busy ? "Ожидаем подтверждение…" : !tonEnabled ? "TON пока недоступен" : tonWallet ? `Перевести ${amount} TON` : "Подключить кошелёк"}
                 </button>
+                {depositId && <button className="btn outline wide" onClick={refreshDepositStatus} disabled={busy}>Проверить подтверждение</button>}
+                </>
               )}
               {!tonEnabled && (
                 <p className="notice">Пополнение TON ещё не настроено на сервере.</p>
@@ -288,8 +329,8 @@ export default function DepositModal({
                 <Ton size={22} />
               </span>
               <span className="menu-text">
-                <b>TON</b>
-                <small>{tonEnabled ? "Перевод на кошелёк проекта" : "Скоро"}</small>
+                <b>Пополнить через криптокошелёк</b>
+                <small>{tonEnabled ? "TON Connect · сеть TON" : "Скоро"}</small>
               </span>
               <Glyph name="chevron" size={16} />
             </button>

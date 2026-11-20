@@ -112,6 +112,12 @@ export interface TonCheckResult {
   amount_stars?: number | null;
 }
 
+export interface TonConnectDeposit {
+  depositId: string;
+  transaction: { network: string; validUntil: number; messages: { address: string; amount: string; payload: string }[] };
+  amountStars: number;
+}
+
 export interface InventoryList {
   items: InventoryItem[];
 }
@@ -279,6 +285,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId, payment_id: paymentId }),
     }),
+  createDeposit: (telegramId: number, amount: number) =>
+    request<TonConnectDeposit>("/api/deposits", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, amount }) }),
+  getDeposit: (depositId: string, telegramId: number) =>
+    request<{ status: "pending" | "credited" | "expired"; balance_stars?: number }>(`/api/deposits/${encodeURIComponent(depositId)}?telegram_id=${telegramId}`),
   getInventory: (telegramId: number) =>
     request<InventoryList>(`/api/inventory/${telegramId}`),
   openCase: (telegramId: number, caseId: string) =>
