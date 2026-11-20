@@ -30,41 +30,50 @@ export type CaseDef = {
 
 const TOTAL_WEIGHT = 10_000;
 
+/*
+ * Веса подобраны так, чтобы RTP каждого кейса был около 92%:
+ *   снежный: EV ≈ 4,60 TON при цене 5  → 92,1%
+ *   золотой: EV ≈ 7,36 TON при цене 8  → 92,0%
+ * Чем дороже приз, тем меньше его вес: дешёвые выпадают часто, дорогие — редко.
+ * Сумма весов в каждом кейсе ровно 10 000 (1 вес = 0,01%).
+ * Эти же веса заданы на сервере в backend/games.py — менять нужно синхронно.
+ */
+
 // ===== Кейс за 5 =====
 const snowPrizes: Prize[] = [
-  { id: "bag", name: "Оранжевая сумка", value: 142.76, image: "bag.png", emoji: "👜", weight: 1 },
-  { id: "ring", name: "Золотое кольцо", value: 48.79, image: "ring.png", emoji: "💍", weight: 4 },
-  { id: "helmet", name: "Розовый мотошлем", value: 43.1, image: "helmet.png", emoji: "🪖", weight: 6 },
-  { id: "bear", name: "Плюшевый мишка", value: 40.49, image: "bear.png", emoji: "🧸", weight: 8 },
-  { id: "potion", name: "Любовное зелье", value: 18.37, image: "potion.png", emoji: "🧪", weight: 30 },
-  { id: "vinyl", name: "Проигрыватель", value: 15.28, image: "vinyl.png", emoji: "📀", weight: 50 },
-  { id: "candle", name: "Свеча-сердце", value: 13.77, image: "candle.png", emoji: "🕯️", weight: 70 },
-  { id: "cocoa", name: "Какао", value: 6, image: "cocoa.png", emoji: "☕", weight: 250 },
-  { id: "snake", name: "Новогодняя змея", value: 5.39, image: "snake.png", emoji: "🐍", weight: 250 },
-  { id: "giftbox", name: "Подарочная коробка", value: 5.25, image: "giftbox.png", emoji: "🎁", weight: 300 },
-  { id: "numbers", name: "Цифры 2025", value: 5.23, image: "numbers.png", emoji: "🔢", weight: 300 },
-  { id: "stocking", name: "Новогодний носок", value: 5.18, image: "stocking.png", emoji: "🧦", weight: 2900 },
-  { id: "ton-1", name: "1 TON", value: 1, image: "ton.png", emoji: "💎", weight: 5831 },
+  { id: "bag", name: "Оранжевая сумка", value: 142.76, image: "bag.png", emoji: "👜", weight: 16 },
+  { id: "ring", name: "Золотое кольцо", value: 48.79, image: "ring.png", emoji: "💍", weight: 56 },
+  { id: "helmet", name: "Розовый мотошлем", value: 43.1, image: "helmet.png", emoji: "🪖", weight: 64 },
+  { id: "bear", name: "Плюшевый мишка", value: 40.49, image: "bear.png", emoji: "🧸", weight: 69 },
+  { id: "potion", name: "Любовное зелье", value: 18.37, image: "potion.png", emoji: "🧪", weight: 176 },
+  { id: "vinyl", name: "Проигрыватель", value: 15.28, image: "vinyl.png", emoji: "📀", weight: 218 },
+  { id: "candle", name: "Свеча-сердце", value: 13.77, image: "candle.png", emoji: "🕯️", weight: 247 },
+  { id: "cocoa", name: "Какао", value: 6, image: "cocoa.png", emoji: "☕", weight: 657 },
+  { id: "snake", name: "Новогодняя змея", value: 5.39, image: "snake.png", emoji: "🐍", weight: 746 },
+  { id: "giftbox", name: "Подарочная коробка", value: 5.25, image: "giftbox.png", emoji: "🎁", weight: 769 },
+  { id: "numbers", name: "Цифры 2025", value: 5.23, image: "numbers.png", emoji: "🔢", weight: 772 },
+  { id: "stocking", name: "Новогодний носок", value: 5.18, image: "stocking.png", emoji: "🧦", weight: 781 },
+  { id: "ton-1", name: "1 TON", value: 1, image: "ton.png", emoji: "💎", weight: 5429 },
 ];
 
 // ===== Кейс за 8 =====
 const goldPrizes: Prize[] = [
-  { id: "hand", name: "Золотой жест", value: 131.27, image: "hand.png", emoji: "🖖", weight: 2 },
-  { id: "watch", name: "Золотые часы", value: 68.68, image: "watch.png", emoji: "⌚", weight: 5 },
-  { id: "bear", name: "Плюшевый мишка", value: 40.49, image: "bear.png", emoji: "🧸", weight: 10 },
-  { id: "rose", name: "Роза под колпаком", value: 32.13, image: "rose.png", emoji: "🌹", weight: 15 },
-  { id: "locket", name: "Золотой замочек", value: 26.61, image: "locket.png", emoji: "💛", weight: 25 },
-  { id: "heels", name: "Розовые туфли", value: 25.41, image: "heels.png", emoji: "👠", weight: 30 },
-  { id: "cigar", name: "Сигара", value: 18.21, image: "cigar.png", emoji: "🚬", weight: 50 },
-  { id: "tophat", name: "Цилиндр", value: 11.49, image: "tophat.png", emoji: "🎩", weight: 100 },
-  { id: "gingerbread", name: "Пряничное сердце", value: 6.57, image: "gingerbread.png", emoji: "🍪", weight: 700 },
-  { id: "clover", name: "Клевер", value: 6.43, image: "clover.png", emoji: "🍀", weight: 800 },
-  { id: "cocoa", name: "Какао", value: 6, image: "cocoa.png", emoji: "☕", weight: 900 },
-  { id: "torch", name: "Факел", value: 5.22, image: "torch.png", emoji: "🔦", weight: 1000 },
-  { id: "candycane", name: "Леденец", value: 5.15, image: "candycane.png", emoji: "🍭", weight: 1000 },
-  { id: "ton-3", name: "3 TON", value: 3, image: "ton.png", emoji: "💎", weight: 2000 },
-  { id: "ton-2.5", name: "2,5 TON", value: 2.5, image: "ton.png", emoji: "💎", weight: 1500 },
-  { id: "ton-2", name: "2 TON", value: 2, image: "ton.png", emoji: "💎", weight: 1863 },
+  { id: "hand", name: "Золотой жест", value: 131.27, image: "hand.png", emoji: "🖖", weight: 43 },
+  { id: "watch", name: "Золотые часы", value: 68.68, image: "watch.png", emoji: "⌚", weight: 78 },
+  { id: "bear", name: "Плюшевый мишка", value: 40.49, image: "bear.png", emoji: "🧸", weight: 126 },
+  { id: "rose", name: "Роза под колпаком", value: 32.13, image: "rose.png", emoji: "🌹", weight: 156 },
+  { id: "locket", name: "Золотой замочек", value: 26.61, image: "locket.png", emoji: "💛", weight: 185 },
+  { id: "heels", name: "Розовые туфли", value: 25.41, image: "heels.png", emoji: "👠", weight: 193 },
+  { id: "cigar", name: "Сигара", value: 18.21, image: "cigar.png", emoji: "🚬", weight: 261 },
+  { id: "tophat", name: "Цилиндр", value: 11.49, image: "tophat.png", emoji: "🎩", weight: 397 },
+  { id: "gingerbread", name: "Пряничное сердце", value: 6.57, image: "gingerbread.png", emoji: "🍪", weight: 659 },
+  { id: "clover", name: "Клевер", value: 6.43, image: "clover.png", emoji: "🍀", weight: 672 },
+  { id: "cocoa", name: "Какао", value: 6, image: "cocoa.png", emoji: "☕", weight: 716 },
+  { id: "torch", name: "Факел", value: 5.22, image: "torch.png", emoji: "🔦", weight: 813 },
+  { id: "candycane", name: "Леденец", value: 5.15, image: "candycane.png", emoji: "🍭", weight: 823 },
+  { id: "ton-3", name: "3 TON", value: 3, image: "ton.png", emoji: "💎", weight: 1345 },
+  { id: "ton-2.5", name: "2,5 TON", value: 2.5, image: "ton.png", emoji: "💎", weight: 1588 },
+  { id: "ton-2", name: "2 TON", value: 2, image: "ton.png", emoji: "💎", weight: 1945 },
 ];
 
 export const CASES: CaseDef[] = [
