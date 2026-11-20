@@ -10,17 +10,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from config import STARS_PER_TON, WELCOME_STARS
 from database import (
     Gift,
     InventoryItem,
     Upgrade,
     User,
+    WalletTransaction,
     close_db,
     get_session,
     init_db,
     seed_db,
 )
 from telegram_auth import get_init_data, verify_telegram_id
+from wallet import configure_webhook, router as wallet_router
 
 MARGIN_COEF = 0.92          # маржа 8%
 RNG_PRECISION = 1_000_000   # точность броска
@@ -30,6 +33,7 @@ RNG_PRECISION = 1_000_000   # точность броска
 async def lifespan(app: FastAPI):
     await init_db()
     await seed_db()
+    await configure_webhook()
     yield
     await close_db()
 
@@ -50,6 +54,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(wallet_router)
 
 
 class UpgradeRequest(BaseModel):
@@ -152,6 +157,8 @@ async def get_user(
         "telegram_id": user.telegram_id,
         "username": user.username,
         "balance_stars": user.balance_stars,
+        "balance_ton": round(user.balance_stars / STARS_PER_TON, 2),
+        "stars_per_ton": STARS_PER_TON,
         "created_at": user.created_at,
         "inventory": [
             _inventory_dict(item)
@@ -180,9 +187,23 @@ async def register(
             if existing_id is not None:
                 return {"telegram_id": req.telegram_id, "created": False}
 
-            user = User(telegram_id=req.telegram_id, username=req.username)
+            user = User(
+                telegram_id=req.telegram_id,
+                username=req.username,
+                balance_stars=WELCOME_STARS,
+            )
             session.add(user)
             await session.flush()
+            if WELCOME_STARS:
+                session.add(
+                    WalletTransaction(
+                        user_id=user.id,
+                        amount=WELCOME_STARS,
+                        kind="welcome",
+                        label="Приветственный баланс",
+                        balance_after=WELCOME_STARS,
+                    )
+                )
             await _grant_starter(session, user.id)
     except IntegrityError:
         # параллельный запрос уже создал этого пользователя

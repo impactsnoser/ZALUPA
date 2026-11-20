@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api, type Wallet } from "./api";
 import { fmt } from "./lib/format";
-import { tg } from "./telegram";
+import { getTelegramId, tg } from "./telegram";
 import { Glyph, NavIcon, Ton } from "./ui/Icons";
 import CasesPage from "./pages/CasesPage";
 import GamesPage from "./pages/GamesPage";
 import FriendsPage from "./pages/FriendsPage";
 import ProfilePage from "./pages/ProfilePage";
 import CaseModal from "./modals/CaseModal";
-import DepositModal, { type PaymentMethod } from "./modals/DepositModal";
+import DepositModal from "./modals/DepositModal";
 import InfoModal, { type Transaction } from "./modals/InfoModal";
 import UpgradeGame from "./games/UpgradeGame";
 import RocketGame from "./games/RocketGame";
@@ -23,13 +24,37 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "profile", label: "Профиль" },
 ];
 
+const KIND_LABEL: Record<string, string> = {
+  welcome: "Приветственный баланс",
+  bet: "Ставка",
+  win: "Выигрыш",
+  deposit_stars: "Пополнение Stars",
+  deposit_ton: "Пополнение TON",
+};
+
+function txDate(raw: string): string {
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "Недавно";
+  return date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("cases");
   const [depositOpen, setDepositOpen] = useState(false);
   const [caseId, setCaseId] = useState<string | null>(null);
   const [game, setGame] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [balance, setBalance] = useState(10);
+  // Баланс хранится на сервере в звёздах, в интерфейсе показываем TON
+  // по курсу starsPerTon. Это один и тот же баланс, а не две валюты.
+  const [balanceStars, setBalanceStars] = useState(0);
+  const [balance, setBalance] = useState(0);
+  const [starsPerTon, setStarsPerTon] = useState(100);
+  const [tonEnabled, setTonEnabled] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [toast, setToast] = useState("");
 
@@ -43,6 +68,43 @@ export default function App() {
 
   const link = useMemo(() => REF_LINK, []);
 
+  const applyWallet = useCallback((wallet: Wallet) => {
+    setBalanceStars(wallet.balance_stars);
+    setBalance(wallet.balance_ton);
+    setStarsPerTon(wallet.stars_per_ton);
+    setTonEnabled(wallet.ton_deposit_enabled);
+    // История тоже живёт на сервере: после перезагрузки она не пропадёт.
+    setTransactions(
+      wallet.transactions.map((t) => ({
+        id: t.id,
+        label: t.label ?? KIND_LABEL[t.kind] ?? "Операция",
+        amount: t.amount_ton,
+        date: txDate(t.created_at),
+      })),
+    );
+  }, []);
+
+  const refreshWallet = useCallback(async () => {
+    const telegramId = getTelegramId();
+    try {
+      const wallet = await api.getWallet(telegramId);
+      applyWallet(wallet);
+    } catch {
+      // Нового игрока ещё нет в базе — регистрируем и выдаём стартовый подарок.
+      try {
+        await api.register(telegramId, tgUser?.username ?? null);
+        const wallet = await api.getWallet(telegramId);
+        applyWallet(wallet);
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : "Не удалось загрузить баланс");
+      }
+    }
+  }, [applyWallet, tgUser?.username]);
+
+  useEffect(() => {
+    void refreshWallet();
+  }, [refreshWallet]);
+
   useEffect(() => {
     if (!toast) return;
     const t = window.setTimeout(() => setToast(""), 2200);
@@ -53,16 +115,34 @@ export default function App() {
     setTransactions((cur) => [{ id: Date.now() + Math.random(), label, amount, date: "Только что" }, ...cur]);
 
   function spend(amount: number, label: string) {
+    const amountStars = Math.max(1, Math.round(amount * starsPerTon));
     setBalance((b) => Math.max(0, b - amount));
+    setBalanceStars((s) => Math.max(0, s - amountStars));
     log(label, -amount);
+    api
+      .spend(getTelegramId(), amountStars, label)
+      .then((res) => {
+        setBalanceStars(res.balance_stars);
+        setBalance(res.balance_ton);
+      })
+      .catch((err) => {
+        setToast(err instanceof Error ? err.message : "Ставка не принята");
+        void refreshWallet();
+      });
   }
+
   function win(amount: number, label: string) {
+    const amountStars = Math.max(1, Math.round(amount * starsPerTon));
     setBalance((b) => b + amount);
+    setBalanceStars((s) => s + amountStars);
     log(label, amount);
-  }
-  function deposit(amount: number, method: PaymentMethod) {
-    setBalance((b) => b + amount);
-    log(method === "nft" ? "NFT-подарок" : method === "stars" ? "Telegram Stars" : "Пополнение TON", amount);
+    api
+      .credit(getTelegramId(), amountStars, label)
+      .then((res) => {
+        setBalanceStars(res.balance_stars);
+        setBalance(res.balance_ton);
+      })
+      .catch(() => void refreshWallet());
   }
 
   async function copyLink() {
@@ -109,7 +189,7 @@ export default function App() {
             </span>
           </span>
         </button>
-        <div className="wallet">
+        <div className="wallet" title={`${balanceStars} ⭐`}>
           <Ton size={18} />
           <b>{fmt(balance)}</b>
           <button className="wallet-plus" onClick={() => setDepositOpen(true)} aria-label="Пополнить баланс">
@@ -128,6 +208,7 @@ export default function App() {
             handle={handle}
             initial={initial}
             balance={balance}
+            stars={balanceStars}
             games={played}
             onDeposit={() => setDepositOpen(true)}
             onMenu={(l) => (l === "Друзья" ? go("friends") : setInfo(l))}
@@ -174,7 +255,16 @@ export default function App() {
           onWin={win}
         />
       )}
-      {depositOpen && <DepositModal onClose={() => setDepositOpen(false)} onComplete={deposit} />}
+      {depositOpen && (
+        <DepositModal
+          telegramId={getTelegramId()}
+          balanceStars={balanceStars}
+          starsPerTon={starsPerTon}
+          tonEnabled={tonEnabled}
+          onClose={() => setDepositOpen(false)}
+          onCredited={applyWallet}
+        />
+      )}
       {info && <InfoModal title={info} onClose={() => setInfo(null)} transactions={transactions} />}
       {toast && <div className="toast">{toast}</div>}
     </div>

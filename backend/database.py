@@ -9,7 +9,7 @@
 
 import os
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode
 
@@ -21,6 +21,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     func,
     select,
 )
@@ -30,6 +31,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from config import WELCOME_STARS
 
 TEST_TELEGRAM_ID = 123456789
 
@@ -152,6 +155,58 @@ class Upgrade(Base):
     )
 
 
+class WalletTransaction(Base):
+    """История движения единого баланса (в звёздах)."""
+
+    __tablename__ = "wallet_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    # Положительная сумма — пополнение/выигрыш, отрицательная — ставка.
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str | None] = mapped_column(String, nullable=True)
+    reference: Mapped[str | None] = mapped_column(String, nullable=True)
+    balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Payment(Base):
+    """Счёт на пополнение: Telegram Stars или перевод TON."""
+
+    __tablename__ = "payments"
+    __table_args__ = (
+        UniqueConstraint("payload", name="uq_payments_payload"),
+        UniqueConstraint("external_id", name="uq_payments_external_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String, nullable=False)  # stars | ton
+    amount_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Для Stars — количество звёзд, для TON — нанотоны.
+    amount_native: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    # payload счёта; для TON это же значение служит комментарием к переводу.
+    payload: Mapped[str] = mapped_column(String, nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 SEED_GIFTS = [
     # name, price_stars, image_url, is_nft
     ("Мишка", 15, "https://example.com/img/bear.png", False),
@@ -196,10 +251,19 @@ async def seed_db() -> None:
                 user = User(
                     telegram_id=TEST_TELEGRAM_ID,
                     username="test_user",
-                    balance_stars=100,
+                    balance_stars=WELCOME_STARS,
                 )
                 session.add(user)
                 await session.flush()
+                session.add(
+                    WalletTransaction(
+                        user_id=user.id,
+                        amount=WELCOME_STARS,
+                        kind="welcome",
+                        label="Приветственный баланс",
+                        balance_after=WELCOME_STARS,
+                    )
+                )
 
             inventory_count = await session.scalar(
                 select(func.count())
@@ -213,6 +277,26 @@ async def seed_db() -> None:
                 if cheapest is not None:
                     session.add(
                         InventoryItem(user_id=user.id, gift_id=cheapest.id)
+                    )
+
+            # Тестовому аккаунту из прошлой версии один раз выдаём стартовый
+            # баланс: раньше поле balance_stars не использовалось.
+            if user.balance_stars < WELCOME_STARS:
+                history_count = await session.scalar(
+                    select(func.count())
+                    .select_from(WalletTransaction)
+                    .where(WalletTransaction.user_id == user.id)
+                )
+                if history_count == 0:
+                    user.balance_stars = WELCOME_STARS
+                    session.add(
+                        WalletTransaction(
+                            user_id=user.id,
+                            amount=WELCOME_STARS,
+                            kind="welcome",
+                            label="Стартовый баланс",
+                            balance_after=WELCOME_STARS,
+                        )
                     )
 
 

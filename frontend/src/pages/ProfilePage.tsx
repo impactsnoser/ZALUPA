@@ -6,6 +6,7 @@ export default function ProfilePage({
   handle,
   initial,
   balance,
+  stars,
   games,
   onDeposit,
   onMenu,
@@ -14,6 +15,7 @@ export default function ProfilePage({
   handle: string;
   initial: string;
   balance: number;
+  stars: number;
   games: number;
   onDeposit: () => void;
   onMenu: (label: string) => void;
@@ -33,6 +35,7 @@ export default function ProfilePage({
           <Ton size={26} />
           {fmt(balance)}
         </b>
+        <small className="balance-sub">{stars} ⭐ — общий баланс Stars и TON</small>
         <button className="btn primary" onClick={onDeposit}>
           Пополнить
         </button>

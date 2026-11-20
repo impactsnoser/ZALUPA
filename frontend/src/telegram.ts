@@ -3,6 +3,7 @@ interface TelegramWebApp {
   initDataUnsafe: { user?: { id: number; username?: string; first_name?: string } };
   ready(): void;
   expand(): void;
+  openInvoice?(url: string, callback?: (status: "paid" | "cancelled" | "failed" | "pending") => void): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
   HapticFeedback?: {

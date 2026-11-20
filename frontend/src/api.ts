@@ -59,7 +59,54 @@ export interface UserProfile {
   telegram_id: number;
   username: string | null;
   balance_stars: number;
+  balance_ton?: number;
+  stars_per_ton?: number;
   inventory: InventoryItem[];
+}
+
+export interface WalletTransaction {
+  id: number;
+  amount_stars: number;
+  amount_ton: number;
+  kind: string;
+  label: string | null;
+  balance_after: number;
+  created_at: string;
+}
+
+export interface Wallet {
+  telegram_id: number;
+  balance_stars: number;
+  balance_ton: number;
+  stars_per_ton: number;
+  ton_deposit_enabled: boolean;
+  ton_address: string | null;
+  transactions: WalletTransaction[];
+}
+
+export interface StarsInvoice {
+  payment_id: number;
+  invoice_link: string;
+  stars: number;
+  amount_ton: number;
+}
+
+export interface TonInvoice {
+  payment_id: number;
+  address: string;
+  comment: string;
+  amount_ton: number;
+  amount_nano: number;
+  amount_stars: number;
+  expires_at: string | null;
+}
+
+export interface TonCheckResult {
+  status: "pending" | "paid" | "expired";
+  balance_stars: number;
+  balance_ton?: number;
+  amount_ton?: number | null;
+  amount_stars?: number | null;
 }
 
 export interface UpgradeResult {
@@ -170,6 +217,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   getUser: (telegramId: number) => request<UserProfile>(`/api/user/${telegramId}`),
   getGifts: () => request<Gift[]>("/api/gifts"),
+  getWallet: (telegramId: number) => request<Wallet>(`/api/wallet/${telegramId}`),
   register: (telegramId: number, username: string | null) =>
     request<RegisterResult>("/api/register", {
       method: "POST",
@@ -182,4 +230,29 @@ export const api = {
     }),
   upgrade: (body: { telegram_id: number; inventory_id: number; target_gift_id: number }) =>
     request<UpgradeResult>("/api/upgrade", { method: "POST", body: JSON.stringify(body) }),
+  spend: (telegramId: number, amountStars: number, label: string) =>
+    request<{ balance_stars: number; balance_ton: number }>("/api/wallet/spend", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId, amount_stars: amountStars, label }),
+    }),
+  credit: (telegramId: number, amountStars: number, label: string) =>
+    request<{ balance_stars: number; balance_ton: number }>("/api/wallet/credit", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId, amount_stars: amountStars, label }),
+    }),
+  depositStars: (telegramId: number, stars: number) =>
+    request<StarsInvoice>("/api/wallet/deposit/stars", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId, stars }),
+    }),
+  depositTon: (telegramId: number, ton: number) =>
+    request<TonInvoice>("/api/wallet/deposit/ton", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId, ton }),
+    }),
+  checkTonDeposit: (telegramId: number, paymentId: number) =>
+    request<TonCheckResult>("/api/wallet/deposit/ton/check", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId, payment_id: paymentId }),
+    }),
 };
