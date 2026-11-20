@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import STARS_PER_TON
 from database import (
+    InventoryItem,
     MinesSession,
     RocketSession,
     User,
@@ -145,13 +146,15 @@ async def open_case(
 
         prize = _draw_prize(case)
         prize_stars = _ton_to_stars(prize["value"])
-        user.balance_stars += prize_stars
-        _add_transaction(
-            session,
-            user,
-            amount=prize_stars,
-            kind="case_win",
-            label=f"Дроп: {prize['name']}",
+        # Приз идёт в инвентарь, а не сразу на баланс.
+        session.add(
+            InventoryItem(
+                user_id=user.id,
+                prize_name=prize["name"],
+                prize_value_stars=prize_stars,
+                prize_image_url=f"/prizes/{prize['image']}",
+                prize_emoji=prize["emoji"],
+            )
         )
 
     return {
@@ -164,6 +167,7 @@ async def open_case(
         "prize_ton": stars_to_ton(prize_stars),
         "balance_stars": user.balance_stars,
         "balance_ton": stars_to_ton(user.balance_stars),
+        "inventory_added": True,
     }
 
 

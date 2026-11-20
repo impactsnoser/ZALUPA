@@ -76,3 +76,6 @@ TELEGRAM_WEBHOOK_DISABLED = os.getenv("TELEGRAM_WEBHOOK_DISABLED", "0").strip().
 
 MIN_STARS_DEPOSIT = max(1, _env_int("MIN_STARS_DEPOSIT", 1))
 MAX_STARS_DEPOSIT = max(MIN_STARS_DEPOSIT, _env_int("MAX_STARS_DEPOSIT", 10000))
+
+# Коэффициент выкупа при продаже предмета из инвентаря (1.0 = полная цена).
+SELL_COEF = max(0.01, _env_float("SELL_COEF", "1.0"))

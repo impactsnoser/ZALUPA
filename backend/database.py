@@ -24,6 +24,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
     select,
+    text,
 )
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -130,13 +131,19 @@ class InventoryItem(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    gift_id: Mapped[int] = mapped_column(ForeignKey("gifts.id"), nullable=False)
+    # Подарок из каталога (для стартового подарка и апгрейда).
+    gift_id: Mapped[int | None] = mapped_column(ForeignKey("gifts.id"), nullable=True)
+    # Приз из кейса, которого нет в каталоге подарков.
+    prize_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    prize_value_stars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prize_image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    prize_emoji: Mapped[str | None] = mapped_column(String, nullable=True)
     acquired_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     user: Mapped[User] = relationship(back_populates="inventory")
-    gift: Mapped[Gift] = relationship()
+    gift: Mapped[Gift | None] = relationship()
 
 
 class Upgrade(Base):
@@ -273,6 +280,23 @@ SEED_GIFTS = [
 async def init_db() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        # Добавляем колонки для призов из кейсов в существующие таблицы.
+        # PostgreSQL поддерживает ADD COLUMN IF NOT EXISTS, SQLite — нет,
+        # поэтому на SQLite просто пропускаем ошибку (колонки уже есть в модели).
+        try:
+            await connection.execute(
+                text(
+                    """
+                    ALTER TABLE inventory
+                    ADD COLUMN IF NOT EXISTS prize_name VARCHAR,
+                    ADD COLUMN IF NOT EXISTS prize_value_stars INTEGER,
+                    ADD COLUMN IF NOT EXISTS prize_image_url VARCHAR,
+                    ADD COLUMN IF NOT EXISTS prize_emoji VARCHAR
+                    """
+                )
+            )
+        except Exception:
+            pass
 
 
 async def seed_db() -> None:

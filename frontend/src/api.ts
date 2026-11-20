@@ -47,11 +47,13 @@ export interface Gift {
 
 export interface InventoryItem {
   inventory_id: number;
-  gift_id: number;
+  gift_id: number | null;
   name: string;
   price_stars: number;
   image_url: string | null;
   is_nft: boolean;
+  kind: "gift" | "prize";
+  emoji: string | null;
 }
 
 export interface UserProfile {
@@ -107,6 +109,27 @@ export interface TonCheckResult {
   balance_ton?: number;
   amount_ton?: number | null;
   amount_stars?: number | null;
+}
+
+export interface InventoryList {
+  items: InventoryItem[];
+}
+
+export interface SellResult {
+  sold_stars: number;
+  sold_ton: number;
+  balance_stars: number;
+  balance_ton: number;
+}
+
+export interface WithdrawResult {
+  withdrawn: {
+    inventory_id: number;
+    name: string;
+    image_url: string | null;
+    is_nft: boolean;
+  };
+  message: string;
 }
 
 export interface UpgradeResult {
@@ -254,5 +277,22 @@ export const api = {
     request<TonCheckResult>("/api/wallet/deposit/ton/check", {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId, payment_id: paymentId }),
+    }),
+  getInventory: (telegramId: number) =>
+    request<InventoryList>(`/api/inventory/${telegramId}`),
+  openCase: (telegramId: number, caseId: string) =>
+    request<{ prize: any; bet_stars: number; balance_stars: number; prize_stars: number }>("/api/cases/open", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId, case_id: caseId }),
+    }),
+  sellInventoryItem: (telegramId: number, inventoryId: number) =>
+    request<SellResult>("/api/inventory/sell-item", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId, inventory_id: inventoryId }),
+    }),
+  withdrawInventoryItem: (telegramId: number, inventoryId: number) =>
+    request<WithdrawResult>("/api/inventory/withdraw-item", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId, inventory_id: inventoryId }),
     }),
 };

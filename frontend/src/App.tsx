@@ -209,6 +209,7 @@ export default function App() {
             initial={initial}
             balance={balance}
             stars={balanceStars}
+            telegramId={getTelegramId()}
             games={played}
             onDeposit={() => setDepositOpen(true)}
             onMenu={(l) => (l === "Друзья" ? go("friends") : setInfo(l))}
@@ -248,11 +249,11 @@ export default function App() {
       {caseId && (
         <CaseModal
           caseId={caseId}
+          telegramId={getTelegramId()}
           balance={balance}
           onClose={() => setCaseId(null)}
           onDeposit={() => (setCaseId(null), setDepositOpen(true))}
-          onSpend={spend}
-          onWin={win}
+          onCredited={refreshWallet}
         />
       )}
       {depositOpen && (

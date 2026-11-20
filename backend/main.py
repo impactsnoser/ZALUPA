@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from config import STARS_PER_TON, WELCOME_STARS
+from config import SELL_COEF, STARS_PER_TON, WELCOME_STARS
 from database import (
     Gift,
     InventoryItem,
@@ -24,7 +24,7 @@ from database import (
 )
 from telegram_auth import get_init_data, verify_telegram_id
 from games import router as games_router
-from wallet import configure_webhook, router as wallet_router
+from wallet import _user_by_telegram_id, configure_webhook, router as wallet_router
 
 MARGIN_COEF = 0.92          # маржа 8%
 RNG_PRECISION = 1_000_000   # точность броска
@@ -85,14 +85,26 @@ def _gift_dict(gift: Gift) -> dict:
 
 
 def _inventory_dict(item: InventoryItem) -> dict:
+    if item.gift is not None:
+        return {
+            "inventory_id": item.id,
+            "gift_id": item.gift.id,
+            "name": item.gift.name,
+            "price_stars": item.gift.price_stars,
+            "image_url": item.gift.image_url,
+            "is_nft": bool(item.gift.is_nft),
+            "kind": "gift",
+            "emoji": None,
+        }
     return {
         "inventory_id": item.id,
-        "acquired_at": item.acquired_at,
-        "gift_id": item.gift.id,
-        "name": item.gift.name,
-        "price_stars": item.gift.price_stars,
-        "image_url": item.gift.image_url,
-        "is_nft": bool(item.gift.is_nft),
+        "gift_id": None,
+        "name": item.prize_name or "Приз",
+        "price_stars": item.prize_value_stars or 0,
+        "image_url": item.prize_image_url,
+        "is_nft": False,
+        "kind": "prize",
+        "emoji": item.prize_emoji,
     }
 
 
@@ -250,6 +262,121 @@ async def claim_starter(
             raise HTTPException(status_code=404, detail="Каталог подарков пуст")
 
     return gift
+
+
+class SellItemRequest(BaseModel):
+    telegram_id: int
+    inventory_id: int
+
+
+@app.get("/api/inventory/{telegram_id}")
+async def get_inventory(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    """Список предметов в инвентаре пользователя (подарки и призы из кейсов)."""
+    verify_telegram_id(telegram_id, init_data)
+    user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
+    if user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    items = (
+        await session.scalars(
+            select(InventoryItem)
+            .options(selectinload(InventoryItem.gift))
+            .where(InventoryItem.user_id == user.id)
+            .order_by(InventoryItem.id.desc())
+        )
+    ).all()
+    return {"items": [_inventory_dict(item) for item in items]}
+
+
+@app.post("/api/inventory/sell-item")
+async def sell_inventory_item(
+    req: SellItemRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    """Продать предмет из инвентаря за звёзды (по курсу SELL_COEF)."""
+    verify_telegram_id(req.telegram_id, init_data)
+
+    async with session.begin():
+        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        item = await session.scalar(
+            select(InventoryItem)
+            .options(selectinload(InventoryItem.gift))
+            .where(
+                InventoryItem.id == req.inventory_id,
+                InventoryItem.user_id == user.id,
+            )
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Предмет не найден в инвентаре")
+
+        value = 0
+        if item.gift is not None:
+            value = item.gift.price_stars
+        elif item.prize_value_stars is not None:
+            value = item.prize_value_stars
+
+        sell_stars = max(1, int(round(value * SELL_COEF)))
+        item_name = item.prize_name or (item.gift.name if item.gift else "Предмет")
+        await session.execute(
+            delete(InventoryItem).where(InventoryItem.id == req.inventory_id)
+        )
+        user.balance_stars += sell_stars
+        _add_transaction(
+            session,
+            user,
+            amount=sell_stars,
+            kind="inventory_sell",
+            label=f"Продажа: {item_name}",
+        )
+
+    return {
+        "sold_stars": sell_stars,
+        "sold_ton": stars_to_ton(sell_stars),
+        "balance_stars": user.balance_stars,
+        "balance_ton": stars_to_ton(user.balance_stars),
+    }
+
+
+@app.post("/api/inventory/withdraw-item")
+async def withdraw_inventory_item(
+    req: SellItemRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    """Забрать предмет из инвентаря (NFT или подарок). Удаляет из инвентаря."""
+    verify_telegram_id(req.telegram_id, init_data)
+
+    async with session.begin():
+        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        item = await session.scalar(
+            select(InventoryItem)
+            .options(selectinload(InventoryItem.gift))
+            .where(
+                InventoryItem.id == req.inventory_id,
+                InventoryItem.user_id == user.id,
+            )
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Предмет не найден в инвентаре")
+
+        await session.execute(
+            delete(InventoryItem).where(InventoryItem.id == req.inventory_id)
+        )
+
+    return {
+        "withdrawn": {
+            "inventory_id": item.id,
+            "name": item.prize_name or (item.gift.name if item.gift else "Подарок"),
+            "image_url": item.prize_image_url or (item.gift.image_url if item.gift else None),
+            "is_nft": bool(item.gift.is_nft) if item.gift else False,
+        },
+        "message": "Предмет готов к передаче. Обратитесь в поддержку с чеком оплаты для доставки NFT/подарка.",
+    }
 
 
 @app.post("/api/upgrade")
