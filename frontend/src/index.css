@@ -361,6 +361,10 @@ small { font-size: 12px; }
 .showcase-item:not(.active) { opacity: .72; transform: scale(.86); }
 .showcase-item.active { border-color: color-mix(in srgb, var(--rc) 65%, var(--foil)); box-shadow: 0 12px 30px -18px var(--rc), inset 0 1px 0 rgba(255,255,255,.08); }
 .showcase-result-item { position: absolute; z-index: 2; top: 50%; left: 50%; width: min(168px, calc(100% - 84px)); height: 112px; transform: translate(-50%, -50%); display: grid; align-content: center; justify-items: center; gap: 1px; padding: 5px; border: 1px solid color-mix(in srgb, var(--rc) 65%, var(--foil)); border-radius: 18px; background: radial-gradient(80% 70% at 50% 40%, color-mix(in srgb, var(--rc) 34%, transparent), transparent), var(--felt-2); box-shadow: 0 12px 30px -18px var(--rc), inset 0 1px 0 rgba(255,255,255,.08); }
+.case-showcase.is-done { width: min(100%, 180px); height: 124px; min-height: 124px; overflow: visible; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.case-showcase.is-done .showcase-index,
+.case-showcase.is-done .showcase-arrow { display: none; }
+.case-showcase.is-done .showcase-result-item { position: relative; inset: auto; width: 100%; height: 112px; transform: none; border: 1px solid color-mix(in srgb, var(--rc) 36%, var(--line)); border-radius: 16px; box-shadow: none; }
 .showcase-result-item b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .showcase-result-item small { color: var(--snow-dim); font-size: 9px; letter-spacing: 1px; }
 .showcase-item b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }

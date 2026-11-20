@@ -181,7 +181,7 @@ export default function CaseModal({
       <h1 className="case-screen-title">{def.title === "Снежный кейс" ? "Тёмная материя" : def.title}</h1>
       {error && <p className="notice bad">{error}</p>}
 
-      <div className={`case-showcase${spinning ? " is-spinning" : ""}`} ref={viewport}>
+      <div className={`case-showcase${spinning ? " is-spinning" : ""}${phase === "done" ? " is-done" : ""}`} ref={viewport}>
         <span className="showcase-index top">{String(topIndex).padStart(2, "0")}</span>
         <span className="showcase-index bottom">{String(bottomIndex).padStart(2, "0")}</span>
         <div
