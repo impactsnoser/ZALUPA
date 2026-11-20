@@ -39,8 +39,8 @@ export default function InfoModal({
         <div className="menu">
           <button className="menu-row" onClick={() => window.location.reload()}>
             <span className="menu-text">
-              <b>Сбросить демо-данные</b>
-              <small>Баланс и история вернутся к начальным</small>
+              <b>Обновить данные</b>
+              <small>Баланс и история хранятся на сервере и не сбросятся</small>
             </span>
           </button>
         </div>
