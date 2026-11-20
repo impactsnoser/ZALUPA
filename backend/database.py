@@ -1,145 +1,225 @@
-import os
-from pathlib import Path
+"""Подключение к базе и модели.
 
-import aiosqlite
+В продакшене используется внешний Postgres (Neon, Supabase, Railway):
+переменная DATABASE_URL вида postgresql://user:pass@host/db.
 
-
-def _resolve_db_path() -> Path:
-    """Путь к SQLite.
-
-    Приоритет:
-    1. DB_PATH — явная переменная (например, /data/app.db);
-    2. RAILWAY_VOLUME_MOUNT_PATH — Railway сам подставляет путь смонтированного volume;
-    3. рядом с кодом — локальная разработка.
-    """
-    explicit = os.getenv("DB_PATH", "").strip()
-    if explicit:
-        return Path(explicit).expanduser()
-
-    volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
-    if volume:
-        return Path(volume) / "app.db"
-
-    return Path(__file__).parent / "app.db"
-
-
-DB_PATH = _resolve_db_path()
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id   INTEGER NOT NULL UNIQUE,
-    username      TEXT,
-    balance_stars INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS gifts (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    price_stars INTEGER NOT NULL CHECK (price_stars > 0),
-    image_url   TEXT,
-    is_nft      INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS inventory (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(id),
-    gift_id     INTEGER NOT NULL REFERENCES gifts(id),
-    acquired_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS upgrades (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id      INTEGER NOT NULL REFERENCES users(id),
-    from_gift_id INTEGER NOT NULL REFERENCES gifts(id),
-    to_gift_id   INTEGER NOT NULL REFERENCES gifts(id),
-    chance       REAL NOT NULL,
-    is_win       INTEGER NOT NULL,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_inventory_user ON inventory(user_id);
-CREATE INDEX IF NOT EXISTS idx_upgrades_user  ON upgrades(user_id);
+Локально без DATABASE_URL приложение падает обратно на SQLite, чтобы можно
+было запускать тесты и разработку без установленного Postgres.
 """
 
-SEED_GIFTS = [
-    # name, price_stars, image_url, is_nft
-    ("Мишка",  15,   "https://example.com/img/bear.png",   0),
-    ("Сердце", 25,   "https://example.com/img/heart.png",  0),
-    ("Подарок", 50,  "https://example.com/img/gift.png",   0),
-    ("Роза",   100,  "https://example.com/img/rose.png",   0),
-    ("Торт",   250,  "https://example.com/img/cake.png",   1),
-    ("Кубок",  500,  "https://example.com/img/cup.png",    1),
-]
+import os
+from collections.abc import AsyncIterator
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import parse_qsl, urlencode
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    func,
+    select,
+)
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 TEST_TELEGRAM_ID = 123456789
 
 
-async def get_connection() -> aiosqlite.Connection:
-    # isolation_level=None -> автокоммит, транзакциями управляем вручную (BEGIN/COMMIT)
-    db = await aiosqlite.connect(DB_PATH, isolation_level=None)
-    db.row_factory = aiosqlite.Row
-    await db.execute("PRAGMA foreign_keys = ON")
-    await db.execute("PRAGMA busy_timeout = 5000")
-    return db
+def _normalize_url(raw: str) -> str:
+    """Приводит строку подключения к формату SQLAlchemy async."""
+    url = raw.strip()
+
+    if url.startswith("postgres://"):
+        url = "postgresql+asyncpg://" + url[len("postgres://") :]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://") :]
+    elif url.startswith("sqlite:///") and not url.startswith("sqlite+aiosqlite:///"):
+        url = "sqlite+aiosqlite:///" + url[len("sqlite:///") :]
+
+    # asyncpg ждёт ssl=... и не понимает channel_binding из Neon/Supabase.
+    if url.startswith("postgresql+asyncpg://"):
+        base, separator, query = url.partition("?")
+        if separator:
+            params = dict(parse_qsl(query))
+            if "sslmode" in params:
+                params["ssl"] = params.pop("sslmode")
+            params.pop("channel_binding", None)
+            url = base + "?" + urlencode(params)
+
+    return url
+
+
+def _database_url() -> str:
+    raw = os.getenv("DATABASE_URL", "").strip()
+    if raw:
+        return _normalize_url(raw)
+
+    # На Railway без DATABASE_URL лучше упасть сразу, чем тихо писать в
+    # эфемерный SQLite и потерять данные при следующем деплое.
+    if any(
+        os.getenv(name)
+        for name in ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID")
+    ):
+        raise RuntimeError(
+            "DATABASE_URL не задан. Подключите внешний Postgres и добавьте "
+            "переменную DATABASE_URL в настройках сервиса."
+        )
+
+    sqlite_path = (Path(__file__).parent / "app.db").as_posix()
+    return f"sqlite+aiosqlite:///{sqlite_path}"
+
+
+DATABASE_URL = _database_url()
+
+_engine_kwargs: dict = {"pool_pre_ping": True}
+if DATABASE_URL.startswith("postgresql"):
+    _engine_kwargs.update(pool_size=5, max_overflow=5)
+
+engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(
+        BigInteger, unique=True, index=True, nullable=False
+    )
+    username: Mapped[str | None] = mapped_column(String, nullable=True)
+    balance_stars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    inventory: Mapped[list["InventoryItem"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Gift(Base):
+    __tablename__ = "gifts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    price_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_nft: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class InventoryItem(Base):
+    __tablename__ = "inventory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    gift_id: Mapped[int] = mapped_column(ForeignKey("gifts.id"), nullable=False)
+    acquired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="inventory")
+    gift: Mapped[Gift] = relationship()
+
+
+class Upgrade(Base):
+    __tablename__ = "upgrades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    from_gift_id: Mapped[int] = mapped_column(ForeignKey("gifts.id"), nullable=False)
+    to_gift_id: Mapped[int] = mapped_column(ForeignKey("gifts.id"), nullable=False)
+    chance: Mapped[float] = mapped_column(Float, nullable=False)
+    is_win: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+SEED_GIFTS = [
+    # name, price_stars, image_url, is_nft
+    ("Мишка", 15, "https://example.com/img/bear.png", False),
+    ("Сердце", 25, "https://example.com/img/heart.png", False),
+    ("Подарок", 50, "https://example.com/img/gift.png", False),
+    ("Роза", 100, "https://example.com/img/rose.png", False),
+    ("Торт", 250, "https://example.com/img/cake.png", True),
+    ("Кубок", 500, "https://example.com/img/cup.png", True),
+]
 
 
 async def init_db() -> None:
-    db = await get_connection()
-    try:
-        await db.execute("PRAGMA journal_mode = WAL")
-        await db.executescript(SCHEMA)
-    finally:
-        await db.close()
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
 
 
 async def seed_db() -> None:
     """Идемпотентный seed: заполняет только пустые таблицы."""
-    db = await get_connection()
-    try:
-        cur = await db.execute("SELECT COUNT(*) AS c FROM gifts")
-        if (await cur.fetchone())["c"] == 0:
-            await db.executemany(
-                "INSERT INTO gifts (name, price_stars, image_url, is_nft) VALUES (?, ?, ?, ?)",
-                SEED_GIFTS,
+    async with SessionLocal() as session:
+        async with session.begin():
+            gifts_count = await session.scalar(
+                select(func.count()).select_from(Gift)
             )
-
-        cur = await db.execute("SELECT id FROM users WHERE telegram_id = ?", (TEST_TELEGRAM_ID,))
-        user = await cur.fetchone()
-        if user is None:
-            cur = await db.execute(
-                "INSERT INTO users (telegram_id, username, balance_stars) VALUES (?, ?, ?)",
-                (TEST_TELEGRAM_ID, "test_user", 100),
-            )
-            user_id = cur.lastrowid
-        else:
-            user_id = user["id"]
-
-        # Демо-данные: тестовому пользователю всегда должно быть что улучшать.
-        # Выдаём стартовый подарок, только если инвентарь пуст (например, после проигрыша).
-        cur = await db.execute(
-            "SELECT COUNT(*) AS c FROM inventory WHERE user_id = ?", (user_id,)
-        )
-        if (await cur.fetchone())["c"] == 0:
-            cur = await db.execute("SELECT id FROM gifts ORDER BY price_stars ASC LIMIT 1")
-            starter = await cur.fetchone()
-            if starter is not None:
-                await db.execute(
-                    "INSERT INTO inventory (user_id, gift_id) VALUES (?, ?)",
-                    (user_id, starter["id"]),
+            if gifts_count == 0:
+                session.add_all(
+                    [
+                        Gift(
+                            name=name,
+                            price_stars=price,
+                            image_url=image,
+                            is_nft=is_nft,
+                        )
+                        for name, price, image, is_nft in SEED_GIFTS
+                    ]
                 )
-    finally:
-        await db.close()
+                await session.flush()
+
+            user = await session.scalar(
+                select(User).where(User.telegram_id == TEST_TELEGRAM_ID)
+            )
+            if user is None:
+                user = User(
+                    telegram_id=TEST_TELEGRAM_ID,
+                    username="test_user",
+                    balance_stars=100,
+                )
+                session.add(user)
+                await session.flush()
+
+            inventory_count = await session.scalar(
+                select(func.count())
+                .select_from(InventoryItem)
+                .where(InventoryItem.user_id == user.id)
+            )
+            if inventory_count == 0:
+                cheapest = await session.scalar(
+                    select(Gift).order_by(Gift.price_stars.asc()).limit(1)
+                )
+                if cheapest is not None:
+                    session.add(
+                        InventoryItem(user_id=user.id, gift_id=cheapest.id)
+                    )
 
 
-if __name__ == "__main__":
-    import asyncio
+async def get_session() -> AsyncIterator[AsyncSession]:
+    async with SessionLocal() as session:
+        yield session
 
-    async def _run():
-        await init_db()
-        await seed_db()
-        print(f"База готова: {DB_PATH}")
 
-    asyncio.run(_run())
+async def close_db() -> None:
+    await engine.dispose()

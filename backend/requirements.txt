@@ -1,3 +1,5 @@
 fastapi
 uvicorn[standard]
-aiosqlite
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30
+aiosqlite>=0.20

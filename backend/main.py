@@ -1,14 +1,25 @@
 import os
 import secrets
-import sqlite3
 from contextlib import asynccontextmanager
 
-import aiosqlite
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from database import get_connection, init_db, seed_db
+from database import (
+    Gift,
+    InventoryItem,
+    Upgrade,
+    User,
+    close_db,
+    get_session,
+    init_db,
+    seed_db,
+)
 from telegram_auth import get_init_data, verify_telegram_id
 
 MARGIN_COEF = 0.92          # маржа 8%
@@ -20,6 +31,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     await seed_db()
     yield
+    await close_db()
 
 
 app = FastAPI(title="Gifts Mini App API", lifespan=lifespan)
@@ -40,41 +52,6 @@ app.add_middleware(
 )
 
 
-async def get_db():
-    db = await get_connection()
-    try:
-        yield db
-    finally:
-        await db.close()
-
-
-async def _cheapest_gift(db: aiosqlite.Connection):
-    cur = await db.execute(
-        "SELECT id, name, price_stars, image_url, is_nft FROM gifts ORDER BY price_stars ASC LIMIT 1"
-    )
-    return await cur.fetchone()
-
-
-async def _grant_starter(db: aiosqlite.Connection, user_id: int):
-    """Кладёт самый дешёвый подарок в инвентарь и возвращает его описание."""
-    gift = await _cheapest_gift(db)
-    if gift is None:
-        return None
-
-    cur = await db.execute(
-        "INSERT INTO inventory (user_id, gift_id) VALUES (?, ?)",
-        (user_id, gift["id"]),
-    )
-    return {
-        "inventory_id": cur.lastrowid,
-        "gift_id": gift["id"],
-        "name": gift["name"],
-        "price_stars": gift["price_stars"],
-        "image_url": gift["image_url"],
-        "is_nft": bool(gift["is_nft"]),
-    }
-
-
 class UpgradeRequest(BaseModel):
     telegram_id: int
     inventory_id: int
@@ -90,54 +67,103 @@ class StarterRequest(BaseModel):
     telegram_id: int
 
 
+def _gift_dict(gift: Gift) -> dict:
+    return {
+        "id": gift.id,
+        "name": gift.name,
+        "price_stars": gift.price_stars,
+        "image_url": gift.image_url,
+        "is_nft": bool(gift.is_nft),
+    }
+
+
+def _inventory_dict(item: InventoryItem) -> dict:
+    return {
+        "inventory_id": item.id,
+        "acquired_at": item.acquired_at,
+        "gift_id": item.gift.id,
+        "name": item.gift.name,
+        "price_stars": item.gift.price_stars,
+        "image_url": item.gift.image_url,
+        "is_nft": bool(item.gift.is_nft),
+    }
+
+
+async def _cheapest_gift(session: AsyncSession) -> Gift | None:
+    return await session.scalar(select(Gift).order_by(Gift.price_stars.asc()).limit(1))
+
+
+async def _grant_starter(session: AsyncSession, user_id: int) -> dict | None:
+    """Кладёт самый дешёвый подарок в инвентарь и возвращает его описание."""
+    gift = await _cheapest_gift(session)
+    if gift is None:
+        return None
+
+    item = InventoryItem(user_id=user_id, gift_id=gift.id)
+    session.add(item)
+    await session.flush()
+
+    return {
+        "inventory_id": item.id,
+        "gift_id": gift.id,
+        "name": gift.name,
+        "price_stars": gift.price_stars,
+        "image_url": gift.image_url,
+        "is_nft": bool(gift.is_nft),
+    }
+
+
 @app.get("/api/health")
-async def health():
+async def health(session: AsyncSession = Depends(get_session)):
     """Проверка живости: Railway healthcheck и ручная диагностика."""
+    try:
+        await session.execute(text("SELECT 1"))
+    except Exception as exc:  # noqa: BLE001 — healthcheck должен вернуть понятный статус
+        raise HTTPException(status_code=503, detail="База данных недоступна") from exc
     return {"status": "ok"}
 
 
 @app.get("/api/gifts")
-async def list_gifts(db: aiosqlite.Connection = Depends(get_db)):
-    cur = await db.execute(
-        "SELECT id, name, price_stars, image_url, is_nft FROM gifts ORDER BY price_stars"
-    )
-    return [{**dict(r), "is_nft": bool(r["is_nft"])} for r in await cur.fetchall()]
+async def list_gifts(session: AsyncSession = Depends(get_session)):
+    gifts = (
+        await session.scalars(select(Gift).order_by(Gift.price_stars.asc()))
+    ).all()
+    return [_gift_dict(gift) for gift in gifts]
 
 
 @app.get("/api/user/{telegram_id}")
 async def get_user(
     telegram_id: int,
-    db: aiosqlite.Connection = Depends(get_db),
+    session: AsyncSession = Depends(get_session),
     init_data: str | None = Depends(get_init_data),
 ):
     verify_telegram_id(telegram_id, init_data)
-    cur = await db.execute(
-        "SELECT id, telegram_id, username, balance_stars, created_at FROM users WHERE telegram_id = ?",
-        (telegram_id,),
+
+    user = await session.scalar(
+        select(User)
+        .options(selectinload(User.inventory).selectinload(InventoryItem.gift))
+        .where(User.telegram_id == telegram_id)
     )
-    user = await cur.fetchone()
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    cur = await db.execute(
-        """
-        SELECT i.id AS inventory_id, i.acquired_at,
-               g.id AS gift_id, g.name, g.price_stars, g.image_url, g.is_nft
-        FROM inventory i
-        JOIN gifts g ON g.id = i.gift_id
-        WHERE i.user_id = ?
-        ORDER BY i.id
-        """,
-        (user["id"],),
-    )
-    inventory = [{**dict(r), "is_nft": bool(r["is_nft"])} for r in await cur.fetchall()]
-    return {**dict(user), "inventory": inventory}
+    return {
+        "id": user.id,
+        "telegram_id": user.telegram_id,
+        "username": user.username,
+        "balance_stars": user.balance_stars,
+        "created_at": user.created_at,
+        "inventory": [
+            _inventory_dict(item)
+            for item in sorted(user.inventory, key=lambda item: item.id)
+        ],
+    }
 
 
 @app.post("/api/register")
 async def register(
     req: RegisterRequest,
-    db: aiosqlite.Connection = Depends(get_db),
+    session: AsyncSession = Depends(get_session),
     init_data: str | None = Depends(get_init_data),
 ):
     """Идемпотентная регистрация: создаёт юзера и выдаёт стартовый подарок.
@@ -146,31 +172,22 @@ async def register(
     """
     verify_telegram_id(req.telegram_id, init_data)
 
-    await db.execute("BEGIN IMMEDIATE")
     try:
-        cur = await db.execute(
-            "SELECT id FROM users WHERE telegram_id = ?", (req.telegram_id,)
-        )
-        if await cur.fetchone() is not None:
-            await db.execute("COMMIT")
-            return {"telegram_id": req.telegram_id, "created": False}
-
-        try:
-            cur = await db.execute(
-                "INSERT INTO users (telegram_id, username) VALUES (?, ?)",
-                (req.telegram_id, req.username),
+        async with session.begin():
+            existing_id = await session.scalar(
+                select(User.id).where(User.telegram_id == req.telegram_id)
             )
-            user_id = cur.lastrowid
-        except sqlite3.IntegrityError:
-            # параллельный запрос уже создал этого пользователя
-            await db.execute("ROLLBACK")
-            return {"telegram_id": req.telegram_id, "created": False}
+            if existing_id is not None:
+                return {"telegram_id": req.telegram_id, "created": False}
 
-        await _grant_starter(db, user_id)
-        await db.execute("COMMIT")
-    except Exception:
-        await db.execute("ROLLBACK")
-        raise
+            user = User(telegram_id=req.telegram_id, username=req.username)
+            session.add(user)
+            await session.flush()
+            await _grant_starter(session, user.id)
+    except IntegrityError:
+        # параллельный запрос уже создал этого пользователя
+        await session.rollback()
+        return {"telegram_id": req.telegram_id, "created": False}
 
     return {"telegram_id": req.telegram_id, "created": True}
 
@@ -178,7 +195,7 @@ async def register(
 @app.post("/api/starter")
 async def claim_starter(
     req: StarterRequest,
-    db: aiosqlite.Connection = Depends(get_db),
+    session: AsyncSession = Depends(get_session),
     init_data: str | None = Depends(get_init_data),
 ):
     """Выдаёт стартовый подарок, если инвентарь пуст.
@@ -188,31 +205,26 @@ async def claim_starter(
     """
     verify_telegram_id(req.telegram_id, init_data)
 
-    await db.execute("BEGIN IMMEDIATE")
-    try:
-        cur = await db.execute(
-            "SELECT id FROM users WHERE telegram_id = ?", (req.telegram_id,)
+    async with session.begin():
+        user = await session.scalar(
+            select(User).where(User.telegram_id == req.telegram_id).with_for_update()
         )
-        user = await cur.fetchone()
         if user is None:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-        cur = await db.execute(
-            "SELECT COUNT(*) AS c FROM inventory WHERE user_id = ?", (user["id"],)
+        inventory_count = await session.scalar(
+            select(func.count())
+            .select_from(InventoryItem)
+            .where(InventoryItem.user_id == user.id)
         )
-        if (await cur.fetchone())["c"] > 0:
+        if inventory_count > 0:
             raise HTTPException(
                 status_code=409, detail="В инвентаре уже есть подарки"
             )
 
-        gift = await _grant_starter(db, user["id"])
+        gift = await _grant_starter(session, user.id)
         if gift is None:
             raise HTTPException(status_code=404, detail="Каталог подарков пуст")
-
-        await db.execute("COMMIT")
-    except Exception:
-        await db.execute("ROLLBACK")
-        raise
 
     return gift
 
@@ -220,39 +232,39 @@ async def claim_starter(
 @app.post("/api/upgrade")
 async def upgrade(
     req: UpgradeRequest,
-    db: aiosqlite.Connection = Depends(get_db),
+    session: AsyncSession = Depends(get_session),
     init_data: str | None = Depends(get_init_data),
 ):
     verify_telegram_id(req.telegram_id, init_data)
-    # BEGIN IMMEDIATE сразу берёт write-lock: параллельные апгрейды одного предмета встанут в очередь
-    await db.execute("BEGIN IMMEDIATE")
-    try:
-        cur = await db.execute("SELECT id FROM users WHERE telegram_id = ?", (req.telegram_id,))
-        user = await cur.fetchone()
+
+    async with session.begin():
+        # Блокировка пользователя сериализует параллельные апгрейды его предметов.
+        user = await session.scalar(
+            select(User)
+            .where(User.telegram_id == req.telegram_id)
+            .with_for_update()
+        )
         if user is None:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
 
         # предмет должен существовать и принадлежать именно этому юзеру
-        cur = await db.execute(
-            """
-            SELECT i.id, i.gift_id, g.price_stars
-            FROM inventory i JOIN gifts g ON g.id = i.gift_id
-            WHERE i.id = ? AND i.user_id = ?
-            """,
-            (req.inventory_id, user["id"]),
+        item = await session.scalar(
+            select(InventoryItem)
+            .options(selectinload(InventoryItem.gift))
+            .where(
+                InventoryItem.id == req.inventory_id,
+                InventoryItem.user_id == user.id,
+            )
+            .with_for_update()
         )
-        item = await cur.fetchone()
         if item is None:
             raise HTTPException(status_code=404, detail="Предмет не найден в инвентаре")
 
-        cur = await db.execute(
-            "SELECT id, price_stars FROM gifts WHERE id = ?", (req.target_gift_id,)
-        )
-        target = await cur.fetchone()
+        target = await session.get(Gift, req.target_gift_id)
         if target is None:
             raise HTTPException(status_code=404, detail="Целевой подарок не найден")
 
-        from_price, to_price = item["price_stars"], target["price_stars"]
+        from_price, to_price = item.gift.price_stars, target.price_stars
         if to_price <= from_price:
             raise HTTPException(
                 status_code=400, detail="Целевой подарок должен быть дороже исходного"
@@ -262,33 +274,29 @@ async def upgrade(
         roll = secrets.randbelow(RNG_PRECISION) / RNG_PRECISION  # [0, 1)
         is_win = roll < chance
 
-        # удаляем старый предмет (rowcount-проверка = защита от двойной траты)
-        cur = await db.execute(
-            "DELETE FROM inventory WHERE id = ? AND user_id = ?",
-            (item["id"], user["id"]),
+        await session.execute(
+            delete(InventoryItem).where(
+                InventoryItem.id == item.id,
+                InventoryItem.user_id == user.id,
+            )
         )
-        if cur.rowcount != 1:
-            raise HTTPException(status_code=409, detail="Предмет уже использован")
 
         new_inventory_id = None
         if is_win:
-            cur = await db.execute(
-                "INSERT INTO inventory (user_id, gift_id) VALUES (?, ?)",
-                (user["id"], target["id"]),
-            )
-            new_inventory_id = cur.lastrowid
+            new_item = InventoryItem(user_id=user.id, gift_id=target.id)
+            session.add(new_item)
+            await session.flush()
+            new_inventory_id = new_item.id
 
-        await db.execute(
-            """
-            INSERT INTO upgrades (user_id, from_gift_id, to_gift_id, chance, is_win)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (user["id"], item["gift_id"], target["id"], chance, int(is_win)),
+        session.add(
+            Upgrade(
+                user_id=user.id,
+                from_gift_id=item.gift_id,
+                to_gift_id=target.id,
+                chance=chance,
+                is_win=is_win,
+            )
         )
-        await db.execute("COMMIT")
-    except Exception:
-        await db.execute("ROLLBACK")
-        raise
 
     return {
         "win": is_win,
@@ -300,8 +308,6 @@ async def upgrade(
 
 if __name__ == "__main__":
     # Локальный запуск и любой хостинг с переменной PORT (Railway, Render и т.п.)
-    import os
-
     import uvicorn
 
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
