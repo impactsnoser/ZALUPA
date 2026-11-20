@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { chanceOf, getCase, paybackChance, rtpOf, type Prize } from "../data/cases";
 import { fmt, fmtChance, rarityOf } from "../lib/format";
 import { tg } from "../telegram";
 import { Ton } from "../ui/Icons";
-import Sheet from "../ui/Sheet";
 
 export function PrizeArt({ prize, size = 64 }: { prize: Prize; size?: number }) {
   const [failed, setFailed] = useState(false);
@@ -20,11 +19,14 @@ export function PrizeArt({ prize, size = 64 }: { prize: Prize; size?: number }) 
   );
 }
 
-const ITEM_W = 96;
+// Ширина и отступ должны совпадать с .showcase-item в index.css (flex-basis 168px).
+// Иначе центр выигрышного предмета не совпадёт с центром витрины.
+const ITEM_W = 168;
 const GAP = 8;
 const STEP = ITEM_W + GAP;
 const REEL_LEN = 46;
 const WIN_AT = 38;
+const ACTIVE_AT = 2;
 const SPIN_MS = 5200;
 
 type Phase = "idle" | "spinning" | "done";
@@ -56,10 +58,15 @@ export default function CaseModal({
   const sorted = useMemo(() => [...def.prizes].sort((a, b) => b.value - a.value), [def]);
   const viewport = useRef<HTMLDivElement>(null);
 
-  const idleReel = useMemo(
-    () => Array.from({ length: REEL_LEN }, (_, i) => sorted[(i * 5) % sorted.length]),
-    [sorted],
-  );
+  // Лента строится окном вокруг выбранного приза: он всегда стоит в позиции
+  // ACTIVE_AT, поэтому его легко подсветить и отцентрировать.
+  const makeReel = (start: number) =>
+    Array.from(
+      { length: REEL_LEN },
+      (_, i) => sorted[(start + i - ACTIVE_AT + sorted.length * 4) % sorted.length],
+    );
+
+  const idleReel = useMemo(() => makeReel(0), [sorted]);
   const [reel, setReel] = useState<Prize[]>(idleReel);
   const [x, setX] = useState(0);
   const [animating, setAnimating] = useState(false);
@@ -69,12 +76,34 @@ export default function CaseModal({
   const [needDeposit, setNeedDeposit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState(0);
+  const [activeSlot, setActiveSlot] = useState(ACTIVE_AT);
 
   const centerOffset = (i: number) => i * STEP + ITEM_W / 2 - (viewport.current?.clientWidth ?? 320) / 2;
 
-  useEffect(() => {
-    setX(centerOffset(3));
+  function selectPrize(next: number) {
+    if (phase === "spinning") return;
+    const index = (next + sorted.length) % sorted.length;
+    setSelected(index);
+    setActiveSlot(ACTIVE_AT);
+    setAnimating(false);
+    setReel(makeReel(index));
+    setX(centerOffset(ACTIVE_AT));
+  }
+
+  // До первой отрисовки центрируем ленту, чтобы не было рывка с левого края.
+  useLayoutEffect(() => {
+    setX(centerOffset(ACTIVE_AT));
   }, []);
+
+  // Esc закрывает экран, если рулетка не крутится.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && phase !== "spinning") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, phase]);
 
   async function open() {
     if (phase === "spinning" || busy) return;
@@ -104,12 +133,15 @@ export default function CaseModal({
     setPrize(null);
     setPrizeStars(result.prize_stars);
     setPhase("spinning");
+    setActiveSlot(WIN_AT);
     tg?.HapticFeedback?.impactOccurred("medium");
     // сброс в начало без анимации, затем запуск
     setAnimating(false);
     setReel(next);
-    setX(centerOffset(2));
-    const jitter = (Math.random() - 0.5) * ITEM_W * 0.6;
+    setX(centerOffset(ACTIVE_AT));
+    // Небольшой сдвиг, чтобы остановка выглядела естественно, но выигрышный
+    // предмет всё равно оставался в центре витрины.
+    const jitter = (Math.random() - 0.5) * ITEM_W * 0.3;
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         setAnimating(true);
@@ -120,6 +152,7 @@ export default function CaseModal({
       setPrize(won);
       setPhase("done");
       setBusy(false);
+      setSelected(sorted.findIndex((item) => item.id === won.id));
       // Обновляем баланс и историю в родителе.
       void onCredited();
       tg?.HapticFeedback?.notificationOccurred(won.value >= def.price ? "success" : "warning");
@@ -128,14 +161,25 @@ export default function CaseModal({
 
   const spinning = phase === "spinning";
   const diff = prize ? prize.value - def.price : 0;
+  const total = sorted.length;
+  const topIndex = (selected % total) + 1;
+  const bottomIndex = ((selected + 2) % total) + 1;
 
   return (
-    <Sheet title={def.title} onClose={onClose} locked={spinning} tall>
+    <section className="case-screen" aria-label={def.title}>
+      <header className="case-screen-head">
+        <button className="case-back" onClick={onClose} disabled={spinning} aria-label="Назад">‹</button>
+        <span>КЕЙСЫ</span>
+        <div className="wallet case-wallet"><Ton size={18} /><b>{fmt(balance)}</b><button onClick={onDeposit} aria-label="Пополнить">＋</button></div>
+      </header>
+      <h1 className="case-screen-title">{def.title === "Снежный кейс" ? "Тёмная материя" : def.title}</h1>
       {error && <p className="notice bad">{error}</p>}
 
-      <div className="reel" ref={viewport}>
+      <div className={`case-showcase${spinning ? " is-spinning" : ""}`} ref={viewport}>
+        <span className="showcase-index top">{String(topIndex).padStart(2, "0")}</span>
+        <span className="showcase-index bottom">{String(bottomIndex).padStart(2, "0")}</span>
         <div
-          className="reel-track"
+          className="showcase-track"
           style={{
             transform: `translate3d(${-x}px,0,0)`,
             transition: animating ? `transform ${SPIN_MS}ms cubic-bezier(0.1, 0.72, 0.12, 1)` : "none",
@@ -144,21 +188,31 @@ export default function CaseModal({
           {reel.map((p, i) => (
             <div
               key={`${p.id}-${i}`}
-              className="reel-item"
+              className={`showcase-item${i === activeSlot ? " active" : ""}`}
               data-r={rarityOf(p.value)}
               style={{ width: ITEM_W, marginRight: GAP }}
             >
               <PrizeArt prize={p} size={60} />
-              <span className="reel-val">
-                <Ton size={12} />
-                {fmt(p.value)}
-              </span>
+              <b>{p.name}</b><small>{fmt(p.value)} TON</small>
             </div>
           ))}
         </div>
-        <i className="reel-laser" />
-        <i className="reel-fade left" />
-        <i className="reel-fade right" />
+        <button
+          className="showcase-arrow left"
+          onClick={() => selectPrize(selected - 1)}
+          disabled={spinning}
+          aria-label="Предыдущий предмет"
+        >
+          ←
+        </button>
+        <button
+          className="showcase-arrow right"
+          onClick={() => selectPrize(selected + 1)}
+          disabled={spinning}
+          aria-label="Следующий предмет"
+        >
+          →
+        </button>
       </div>
 
       <div className="drop-result" aria-live="polite">
@@ -175,18 +229,18 @@ export default function CaseModal({
           </>
         ) : (
           <span className="muted">
-            {spinning ? "Крутим…" : "Нажми «Открыть», и сервер выберет приз"}
+            {spinning ? "Открываем кейс…" : "Один кейс. Один новый предмет."}
           </span>
         )}
       </div>
 
       {needDeposit ? (
-        <button className="btn primary wide" onClick={onDeposit}>
+        <button className="case-buy wide" onClick={onDeposit}>
           Пополнить баланс
         </button>
       ) : (
-        <button className="btn primary wide" onClick={open} disabled={spinning || busy}>
-          {spinning ? "Крутим…" : phase === "done" ? "Открыть ещё раз за" : "Открыть за"}
+        <button className="case-buy wide" onClick={open} disabled={spinning || busy}>
+          {spinning ? "Открываем…" : phase === "done" ? "Открыть ещё раз за" : "Открыть кейс за"}
           {!spinning && (
             <>
               <Ton size={16} />
@@ -196,7 +250,8 @@ export default function CaseModal({
         </button>
       )}
 
-      <h3 className="sub-title">Что может выпасть</h3>
+      <p className="case-inventory-note">ⓘ Предмет появится в инвентаре</p>
+      <h3 className="sub-title case-prizes-title">Что может выпасть</h3>
       <div className="prize-grid">
         {sorted.map((p) => (
           <div
@@ -214,10 +269,10 @@ export default function CaseModal({
         ))}
       </div>
       <p className="fine">
-        Шансы показаны так, как работает розыгрыш на сервере. Возврат игроку{" "}
+        Розыгрыш идёт на сервере. Возврат игроку{" "}
         {rtpOf(def).toFixed(1).replace(".", ",")}%, шанс получить приз не меньше цены кейса{" "}
         {paybackChance(def).toFixed(2).replace(".", ",")}%.
       </p>
-    </Sheet>
+    </section>
   );
 }

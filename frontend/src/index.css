@@ -346,6 +346,38 @@ small { font-size: 12px; }
 .inventory-nft { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: rgba(246, 195, 87, 0.15); color: #f6c357; margin-top: 4px; display: inline-block; }
 .inventory-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .inventory-actions .btn { min-width: 70px; }
+
+/* Case opening reference layout */
+.case-screen { position: fixed; inset: 0; z-index: 60; overflow-y: auto; padding: calc(14px + env(safe-area-inset-top)) 24px calc(34px + env(safe-area-inset-bottom)); background: var(--night); background-image: radial-gradient(120% 50% at 50% -10%, rgba(28, 74, 65, 0.55), transparent 70%); color: var(--snow); animation: fade .18s; }
+.case-screen-head { display: flex; align-items: center; gap: 12px; max-width: 440px; margin: 0 auto; height: 38px; color: var(--snow-dim); font-size: 11px; font-weight: 600; }
+.case-back { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 13px; background: var(--felt-2); color: var(--snow); font-size: 26px; line-height: 1; }
+.case-wallet { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 14px; background: var(--felt-2); color: var(--snow); }
+.case-wallet button { padding-left: 7px; border-left: 1px solid var(--line); color: var(--snow-dim); }
+.case-screen-title { max-width: 440px; margin: 12px auto 18px; font: 700 24px/1.2 var(--font-display); letter-spacing: -.5px; }
+.case-showcase { position: relative; max-width: 440px; height: min(82vw, 320px); min-height: 276px; margin: 0 auto 22px; display: flex; align-items: center; justify-content: flex-start; overflow: hidden; border: 1px solid var(--line); border-radius: 25px; background: linear-gradient(180deg, rgba(20, 58, 51, .42), rgba(15, 43, 38, .8)); }
+.showcase-track { display: flex; align-items: center; height: 100%; will-change: transform; }
+.showcase-item { flex: 0 0 168px; height: 128px; display: grid; align-content: center; justify-items: center; gap: 3px; margin-right: 8px; padding: 8px; border: 1px solid color-mix(in srgb, var(--rc) 42%, transparent); border-radius: 18px; background: radial-gradient(80% 70% at 50% 40%, color-mix(in srgb, var(--rc) 28%, transparent), transparent), var(--felt-2); color: var(--snow); }
+.showcase-item .prize-art { width: 76px !important; height: 76px !important; }
+.showcase-item:not(.active) { opacity: .42; transform: scale(.82); }
+.showcase-item.active { border-color: color-mix(in srgb, var(--rc) 65%, var(--foil)); box-shadow: 0 12px 30px -18px var(--rc), inset 0 1px 0 rgba(255,255,255,.08); }
+.showcase-item b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.showcase-item small { color: var(--snow-dim); font-size: 9px; letter-spacing: 1px; }
+.showcase-index { position: absolute; z-index: 2; left: 18px; color: var(--snow-dim); font-size: 10px; }
+.showcase-index.top { top: 5px; }.showcase-index.bottom { bottom: 5px; }
+.showcase-arrow { position: absolute; z-index: 3; top: 50%; transform: translateY(-50%); color: var(--snow); font-size: 26px; }
+.showcase-arrow.left { left: 12px; }.showcase-arrow.right { right: 12px; }
+.case-screen .drop-result { min-height: 24px; margin: 0 auto 12px; text-align: center; color: var(--snow-dim); font-size: 13px; }
+.case-screen .drop-result strong { color: #f4f5f6; }
+.case-buy { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; max-width: 440px; min-height: 56px; margin: 0 auto; border-radius: 16px; background: linear-gradient(180deg, #ffd27a, var(--foil)); color: #2b1a00; font-size: 16px; font-weight: 700; box-shadow: 0 8px 22px -10px rgba(242, 184, 75, .65), inset 0 1px 0 rgba(255, 255, 255, .35); }
+.case-buy svg { flex: none; }.case-buy:disabled { opacity: .65; }
+.case-inventory-note { margin: 16px 0 34px; color: var(--snow-dim); text-align: center; font-size: 11px; }
+.case-prizes-title { max-width: 440px; margin: 0 auto 18px; text-align: center; text-transform: uppercase; font: 700 16px var(--font-body); }
+.case-screen .prize-grid { max-width: 440px; margin: 0 auto; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.case-screen .prize-tile { min-height: 136px; border: 1px solid color-mix(in srgb, var(--rc) 42%, transparent); border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 20%, var(--felt-2)), var(--felt)); }
+.case-screen .prize-tile .prize-art { width: 56px !important; height: 56px !important; }
+.case-screen .prize-tile-chance { display: none; }.case-screen .prize-tile-val { top: 6px; right: 7px; }
+.case-screen .fine { max-width: 440px; margin: 14px auto 0; color: #777b84; }
+@media (max-width: 360px) { .case-screen { padding-left: 18px; padding-right: 18px; } .case-showcase { min-height: 260px; } }
 .btn.outline { background: transparent; border: 1px solid var(--line); color: var(--snow); }
 .btn.outline:hover { background: var(--felt-3); }
 
