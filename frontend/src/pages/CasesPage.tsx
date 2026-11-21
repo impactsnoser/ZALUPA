@@ -1,5 +1,5 @@
 import { useMemo, type CSSProperties } from "react";
-import { CASES, SOON_CASES } from "../data/cases";
+import { CASES } from "../data/cases";
 import { makeLiveDrops } from "../data/mock";
 import { fmt } from "../lib/format";
 import GiftBox, { PALETTES } from "../ui/GiftBox";
@@ -35,10 +35,15 @@ export default function CasesPage({ onOpen }: { onOpen: (caseId: string) => void
       <h1 className="page-title">Кейсы</h1>
       <div className="case-grid">
         {CASES.map((c) => {
-          const pal = PALETTES[c.box];
+          const pal = PALETTES[c.box] ?? PALETTES.ice;
           const max = Math.max(...c.prizes.map((p) => p.value));
           return (
-            <button key={c.id} className="case-card" style={{ "--glow": pal.glow } as CSSProperties} onClick={() => onOpen(c.id)}>
+            <button
+              key={c.id}
+              className="case-card"
+              style={{ "--glow": pal.glow } as CSSProperties}
+              onClick={() => onOpen(c.id)}
+            >
               <span className="case-stage">
                 <GiftBox palette={pal} />
               </span>
@@ -53,17 +58,6 @@ export default function CasesPage({ onOpen }: { onOpen: (caseId: string) => void
             </button>
           );
         })}
-        {SOON_CASES.map((c) => (
-          <div key={c.id} className="case-card soon" style={{ "--glow": PALETTES[c.box].glow } as CSSProperties} aria-disabled="true">
-            <span className="case-stage">
-              <GiftBox palette={PALETTES[c.box]} />
-            </span>
-            <span className="case-name">{c.title}</span>
-            <span className="case-meta">
-              <span className="soon-badge">Скоро</span>
-            </span>
-          </div>
-        ))}
       </div>
     </section>
   );

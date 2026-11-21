@@ -11,7 +11,7 @@ export function PrizeArt({ prize, size = 64 }: { prize: Prize; size?: number }) 
   return (
     <span className="prize-art" data-r={r} style={{ width: size, height: size }}>
       {failed ? (
-        <span style={{ fontSize: size * 0.62 }}>{prize.emoji}</span>
+        <span style={{ fontSize: size * 0.34 }}>🎁</span>
       ) : (
         <img src={`/prizes/${prize.image}`} alt="" draggable={false} onError={() => setFailed(true)} />
       )}
