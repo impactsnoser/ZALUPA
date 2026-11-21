@@ -173,28 +173,24 @@ export default function ProfilePage({
           <b>{inventory.length}</b>
         </div>
       </div>
-      {isAdmin && (
-        <div className="menu">
-          <h3 className="menu-section-title">Управление</h3>
-          <button className="menu-row admin-entry" onClick={onAdmin}>
-            <span className="menu-text">
-              <b>Админ-панель</b>
-              <small>Шансы кейсов, удача и права</small>
-            </span>
-            <Glyph name="chevron" size={16} />
-          </button>
-        </div>
-      )}
       <div className="menu">
         <h3 className="menu-section-title">Разделы</h3>
-        {["История операций", "Друзья", "Настройки"].map((label) => (
-          <button key={label} className="menu-row" onClick={() => onMenu(label)}>
-            <span className="menu-text">
-              <b>{label}</b>
-            </span>
-            <Glyph name="chevron" size={16} />
-          </button>
-        ))}
+        {["История операций", "Друзья", "Настройки", isAdmin ? "Админ-панель" : ""].filter((label) => label).map((label) => {
+          const isAdminPanel = label === "Админ-панель";
+          return (
+            <button
+              key={label}
+              className="menu-row"
+              onClick={() => isAdminPanel ? void onAdmin() : onMenu(label)}
+              disabled={isAdmin && !isAdmin}
+            >
+              <span className="menu-text">
+                <b>{label}</b>
+              </span>
+              <Glyph name="chevron" size={16} />
+            </button>
+          );
+        })}
       </div>
     </section>
   );
