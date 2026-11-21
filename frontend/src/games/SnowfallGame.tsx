@@ -125,7 +125,11 @@ export default function SnowfallGame({ balance, starsPerTon, onBalance, onChange
           })}
         </div>
         <div className={`snowfall-chest-row ${game?.status === "chest" ? "ready" : ""} ${opening ? "opening" : ""} ${game?.status === "opened" ? "opened" : ""}`} aria-label="Сундуки с наградами">
-          {Array.from({ length: 5 }, (_, index) => <span key={index} className={`snowfall-chest ${game?.status === "opened" && index === 2 ? "open" : ""}`} aria-hidden="true"><i /></span>)}
+          {Array.from({ length: 5 }, (_, index) => {
+            const isOpen = game?.status === "opened" && index === 2;
+            const isOpening = opening && index === 2;
+            return <span key={index} className={`snowfall-chest ${isOpen ? "open" : ""}`} aria-hidden="true"><i>{isOpen ? "✨" : isOpening ? "🔓" : "🔒"}</i></span>;
+          })}
         </div>
       </div>
 

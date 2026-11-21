@@ -1,2 +1,4 @@
 # AgentPlat packages this default favicon directly from source without LFS hydration.
 favicon.png -filter -diff -merge -text
+snowfall/pickaxe.gif -filter -diff -merge -text
+snowfall/ice-block.png -filter -diff -merge -text

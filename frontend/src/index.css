@@ -365,12 +365,11 @@ small { font-size: 12px; }
 .snowfall-field.is-falling .snowfall-cell.target { animation:block-hit .5s ease; }
 @keyframes block-hit { 25% { transform:translateX(-4px) scale(.96); filter:brightness(1.45); } 55% { transform:translateX(4px) scale(1.04); } }
 .snowfall-chest-row { position:relative; z-index:2; display:grid; grid-template-columns:repeat(5,1fr); align-items:end; gap:10px; width:min(92%,300px); margin:12px auto 0; padding:4px 0 1px; }
-.snowfall-chest { position:relative; height:24px; border:2px solid #714524; border-radius:4px; background:linear-gradient(180deg,#c58439,#98602d); box-shadow:inset 0 3px 0 rgba(255,226,164,.35),0 3px 0 rgba(7,22,36,.5); }
+.snowfall-chest { position:relative; height:28px; border:2px solid #714524; border-radius:4px; background:linear-gradient(180deg,#c58439,#98602d); box-shadow:inset 0 3px 0 rgba(255,226,164,.35),0 3px 0 rgba(7,22,36,.5); }
 .snowfall-chest::before { content:""; position:absolute; left:-2px; right:-2px; top:-5px; height:8px; border:2px solid #714524; border-radius:4px 4px 2px 2px; background:linear-gradient(180deg,#e2ad5f,#ad7137); transform-origin:bottom; transition:transform .36s cubic-bezier(.2,.75,.2,1); }
-.snowfall-chest::after { content:""; position:absolute; left:50%; top:5px; width:5px; height:7px; border:1px solid #ffe2a0; border-radius:2px; background:#dba74e; transform:translateX(-50%); }
+.snowfall-chest > i { position:absolute; z-index:1; top:7px; left:50%; transform:translateX(-50%); font-size:11px; line-height:1; font-style:normal; filter:drop-shadow(0 1px 1px rgba(46,27,8,.8)); }
 .snowfall-chest.open { border-color:#e0b450; background:linear-gradient(180deg,#f6c86c,#ad712b); box-shadow:0 0 16px rgba(255,217,119,.48),inset 0 3px 0 rgba(255,255,255,.38); }
 .snowfall-chest.open::before { transform:rotateX(62deg) translateY(-4px); }
-.snowfall-chest.open::after { height:4px; background:#fff1a9; box-shadow:0 0 10px #fff2b1; }
 .snowfall-chest-row.ready .snowfall-chest:nth-child(3) { animation:chest-pulse .9s ease-in-out infinite alternate; }
 .snowfall-chest-row.opening .snowfall-chest:nth-child(3),.snowfall-chest-row.opened .snowfall-chest:nth-child(3) { animation:chest-unlock .65s ease both; }
 @keyframes chest-pulse { to { filter:brightness(1.35); box-shadow:0 0 14px rgba(255,217,119,.62); } }
