@@ -105,6 +105,10 @@ class User(Base):
     )
     username: Mapped[str | None] = mapped_column(String, nullable=True)
     balance_stars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Права админа: выдаются в панели или через ADMIN_IDS в переменных.
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Множитель удачи для кейсов (1.0 = обычные шансы).
+    luck_multiplier: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -180,6 +184,15 @@ class WalletTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class AppSetting(Base):
+    """Настройки, которые меняются из админ-панели (например, удача кейсов)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class Payment(Base):
@@ -334,10 +347,41 @@ async def _migrate_inventory(connection) -> None:
     await connection.execute(text("DROP TABLE inventory_legacy"))
 
 
+async def _migrate_users(connection) -> None:
+    """Догоняем схему users для баз до появления админ-панели.
+
+    create_all не меняет существующие таблицы, поэтому добавляем колонки
+    is_admin и luck_multiplier вручную. Миграция идемпотентная.
+    """
+    if connection.dialect.name == "postgresql":
+        await connection.execute(
+            text(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS luck_multiplier DOUBLE PRECISION NOT NULL DEFAULT 1.0
+                """
+            )
+        )
+        return
+
+    rows = (await connection.execute(text("PRAGMA table_info(users)"))).all()
+    existing = {row[1] for row in rows}
+    if "is_admin" not in existing:
+        await connection.execute(
+            text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0")
+        )
+    if "luck_multiplier" not in existing:
+        await connection.execute(
+            text("ALTER TABLE users ADD COLUMN luck_multiplier FLOAT NOT NULL DEFAULT 1.0")
+        )
+
+
 async def init_db() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         await _migrate_inventory(connection)
+        await _migrate_users(connection)
 
 
 async def seed_db() -> None:

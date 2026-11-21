@@ -84,6 +84,8 @@ export interface Wallet {
   stars_per_ton: number;
   ton_deposit_enabled: boolean;
   ton_address: string | null;
+  is_admin?: boolean;
+  luck_multiplier?: number;
   transactions: WalletTransaction[];
 }
 
@@ -137,6 +139,27 @@ export interface WithdrawResult {
     is_nft: boolean;
   };
   message: string;
+}
+
+export interface AdminUser {
+  telegram_id: number;
+  username: string | null;
+  balance_stars: number;
+  is_admin: boolean;
+  is_root: boolean;
+  luck_multiplier: number;
+}
+
+export interface AdminCaseSetting {
+  id: string;
+  title: string;
+  price: number;
+  luck_multiplier: number;
+}
+
+export interface AdminSettings {
+  cases: AdminCaseSetting[];
+  max_luck: number;
 }
 
 export interface UpgradeResult {
@@ -312,4 +335,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId, inventory_id: inventoryId }),
     }),
+  adminUsers: (telegramId: number, query: string) =>
+    request<{ users: AdminUser[] }>(
+      `/api/admin/users?telegram_id=${telegramId}&q=${encodeURIComponent(query)}`,
+    ),
+  setAdminRights: (telegramId: number, targetId: number, enabled: boolean) =>
+    request<{ ok: boolean; user: AdminUser }>(
+      `/api/admin/users/${targetId}/admin?telegram_id=${telegramId}`,
+      { method: "POST", body: JSON.stringify({ enabled }) },
+    ),
+  setUserLuck: (telegramId: number, targetId: number, luck: number) =>
+    request<{ ok: boolean; user: AdminUser }>(
+      `/api/admin/users/${targetId}/luck?telegram_id=${telegramId}`,
+      { method: "POST", body: JSON.stringify({ luck }) },
+    ),
+  adminSettings: (telegramId: number) =>
+    request<AdminSettings>(`/api/admin/settings?telegram_id=${telegramId}`),
+  setCaseLuck: (telegramId: number, caseId: string, luck: number) =>
+    request<{ ok: boolean }>(
+      `/api/admin/cases/${encodeURIComponent(caseId)}/luck?telegram_id=${telegramId}`,
+      { method: "POST", body: JSON.stringify({ luck }) },
+    ),
 };

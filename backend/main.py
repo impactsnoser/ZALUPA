@@ -23,6 +23,7 @@ from database import (
     seed_db,
 )
 from telegram_auth import get_init_data, verify_telegram_id
+from admin import router as admin_router
 from games import router as games_router
 from wallet import _add_transaction, _user_by_telegram_id, configure_webhook, router as wallet_router, stars_to_ton
 
@@ -57,6 +58,7 @@ app.add_middleware(
 )
 app.include_router(wallet_router)
 app.include_router(games_router)
+app.include_router(admin_router)
 
 
 class UpgradeRequest(BaseModel):

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type InventoryItem } from "../api";
+import { api, type InventoryItem, type SellResult } from "../api";
 import { fmt } from "../lib/format";
 import { Glyph, Ton } from "../ui/Icons";
 import Sheet from "../ui/Sheet";
@@ -12,7 +12,11 @@ export default function ProfilePage({
   stars,
   telegramId,
   games,
+  isAdmin,
+  luck,
   onDeposit,
+  onAdmin,
+  onSold,
   onMenu,
 }: {
   name: string;
@@ -22,7 +26,11 @@ export default function ProfilePage({
   stars: number;
   telegramId: number;
   games: number;
+  isAdmin: boolean;
+  luck: number;
   onDeposit: () => void;
+  onAdmin: () => void;
+  onSold: (result: SellResult) => void;
   onMenu: (label: string) => void;
 }) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -50,7 +58,8 @@ export default function ProfilePage({
     try {
       const result = await api.sellInventoryItem(telegramId, item.inventory_id);
       setInventory((cur) => cur.filter((i) => i.inventory_id !== item.inventory_id));
-      // Баланс обновится через кошелёк в App (перезагрузка при закрытии модала).
+      // Сразу обновляем баланс в App — без ожидания перезагрузки кошелька.
+      onSold(result);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Не удалось продать предмет");
     } finally {
@@ -109,7 +118,10 @@ export default function ProfilePage({
           <Ton size={26} />
           {fmt(balance)}
         </b>
-        <small className="balance-sub">{stars} ⭐ — общий баланс Stars и TON</small>
+        <small className="balance-sub">
+          {stars} ⭐ — общий баланс Stars и TON
+          {luck > 1 && <span className="luck-badge">удача ×{luck}</span>}
+        </small>
         <button className="btn primary" onClick={onDeposit}>
           Пополнить
         </button>
@@ -124,6 +136,18 @@ export default function ProfilePage({
           <b>{inventory.length}</b>
         </div>
       </div>
+      {isAdmin && (
+        <div className="menu">
+          <h3 className="menu-section-title">Управление</h3>
+          <button className="menu-row admin-entry" onClick={onAdmin}>
+            <span className="menu-text">
+              <b>Админ-панель</b>
+              <small>Шансы кейсов, удача и права</small>
+            </span>
+            <Glyph name="chevron" size={16} />
+          </button>
+        </div>
+      )}
       <div className="menu">
         <h3 className="menu-section-title">Инвентарь</h3>
         {inventory.length === 0 ? (

@@ -44,6 +44,7 @@ export default function CaseModal({
   caseId,
   telegramId,
   balance,
+  luck = 1,
   onClose,
   onDeposit,
   onCredited,
@@ -51,6 +52,7 @@ export default function CaseModal({
   caseId: string;
   telegramId: number;
   balance: number;
+  luck?: number;
   onClose: () => void;
   onDeposit: () => void;
   onCredited: () => void;
@@ -178,7 +180,10 @@ export default function CaseModal({
         <span>КЕЙСЫ</span>
         <div className="wallet case-wallet"><Ton size={18} /><b>{fmt(balance)}</b><button onClick={onDeposit} aria-label="Пополнить">＋</button></div>
       </header>
-      <h1 className="case-screen-title">{def.title === "Снежный кейс" ? "Тёмная материя" : def.title}</h1>
+      <h1 className="case-screen-title">
+        {def.title === "Снежный кейс" ? "Тёмная материя" : def.title}
+        {luck > 1 && <span className="luck-badge">шансы ×{luck}</span>}
+      </h1>
       {error && <p className="notice bad">{error}</p>}
 
       <div className={`case-showcase${spinning ? " is-spinning" : ""}${phase === "done" ? " is-done" : ""}`} ref={viewport}>
@@ -288,6 +293,12 @@ export default function CaseModal({
         {rtpOf(def).toFixed(1).replace(".", ",")}%, шанс получить приз не меньше цены кейса{" "}
         {paybackChance(def).toFixed(2).replace(".", ",")}%.
       </p>
+      {luck > 1 && (
+        <p className="fine">
+          Для твоего аккаунта включены повышенные шансы ×{luck}: дорогие призы выпадают
+          чаще, чем в базовом расчёте выше.
+        </p>
+      )}
     </section>
   );
 }

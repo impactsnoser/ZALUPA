@@ -79,3 +79,26 @@ MAX_STARS_DEPOSIT = max(MIN_STARS_DEPOSIT, _env_int("MAX_STARS_DEPOSIT", 10000))
 
 # Коэффициент выкупа при продаже предмета из инвентаря (1.0 = полная цена).
 SELL_COEF = max(0.01, _env_float("SELL_COEF", "1.0"))
+
+
+def _parse_admin_ids(raw: str) -> set[int]:
+    """Разбирает "123, 456 789" в набор Telegram ID."""
+    ids: set[int] = set()
+    for part in raw.replace(";", ",").replace(" ", ",").split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.add(int(part))
+    return ids
+
+
+# Владельцы проекта. Можно вписать ID прямо здесь или задать ADMIN_IDS
+# в Railway → Variables (несколько ID через запятую).
+# Эти аккаунты всегда видят админ-панель, даже без записи в базе.
+DEFAULT_ADMIN_IDS = ""
+
+ADMIN_IDS = _parse_admin_ids(DEFAULT_ADMIN_IDS) | _parse_admin_ids(
+    os.getenv("ADMIN_IDS", "")
+)
+
+# Максимальный множитель удачи: выше — уже совсем не рыночные шансы.
+MAX_LUCK = min(10.0, max(1.0, _env_float("MAX_LUCK", "5")))

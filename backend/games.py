@@ -17,8 +17,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import STARS_PER_TON
+from config import MAX_LUCK, STARS_PER_TON
 from database import (
+    AppSetting,
     InventoryItem,
     MinesSession,
     RocketSession,
@@ -106,19 +107,59 @@ def _ton_to_stars(value: float) -> int:
     return max(1, int(round(value * STARS_PER_TON)))
 
 
-def _draw_prize(case: dict) -> dict:
-    roll = secrets.randbelow(TOTAL_WEIGHT)
-    for prize in case["prizes"]:
-        if roll < prize["weight"]:
+CASE_LUCK_PREFIX = "case_luck:"
+
+
+async def _case_luck(session: AsyncSession, case_id: str) -> float:
+    """Глобальный множитель удачи кейса, заданный в админ-панели."""
+    setting = await session.get(AppSetting, f"{CASE_LUCK_PREFIX}{case_id}")
+    if setting is None:
+        return 1.0
+    try:
+        return max(1.0, min(MAX_LUCK, float(setting.value)))
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _draw_prize(case: dict, luck: float = 1.0) -> dict:
+    """Взвешенный розыгрыш.
+
+    luck = 1 — обычные веса. При luck > 1 вес дорогих призов растёт сильнее,
+    чем дешёвых: это и есть «повышенные шансы» для партнёров и рекламы.
+    """
+    luck = max(1.0, min(MAX_LUCK, luck))
+    prizes = case["prizes"]
+
+    if luck <= 1.0:
+        roll = secrets.randbelow(TOTAL_WEIGHT)
+        for prize in prizes:
+            if roll < prize["weight"]:
+                return prize
+            roll -= prize["weight"]
+        return prizes[-1]
+
+    max_value = max(prize["value"] for prize in prizes) or 1.0
+    weights = [
+        prize["weight"] * (1.0 + (luck - 1.0) * (prize["value"] / max_value))
+        for prize in prizes
+    ]
+    roll = secrets.randbelow(1_000_000) / 1_000_000 * sum(weights)
+    for prize, weight in zip(prizes, weights):
+        if roll < weight:
             return prize
-        roll -= prize["weight"]
-    return case["prizes"][-1]
+        roll -= weight
+    return prizes[-1]
 
 
 @router.get("/cases")
-async def list_cases():
+async def list_cases(session: AsyncSession = Depends(get_session)):
     """Публичный каталог. Цены и призы всё равно проверяются на сервере."""
-    return CASES
+    result = []
+    for case in CASES:
+        item = dict(case)
+        item["luck_multiplier"] = await _case_luck(session, case["id"])
+        result.append(item)
+    return result
 
 
 class CaseOpenRequest(BaseModel):
@@ -141,6 +182,11 @@ async def open_case(
         if user.balance_stars < bet_stars:
             raise HTTPException(status_code=400, detail="Недостаточно средств")
 
+        # Удача складывается: общая на кейс + персональная для игрока.
+        case_luck = await _case_luck(session, case["id"])
+        user_luck = max(1.0, min(MAX_LUCK, float(user.luck_multiplier or 1.0)))
+        luck = min(MAX_LUCK, case_luck * user_luck)
+
         user.balance_stars -= bet_stars
         _add_transaction(
             session,
@@ -150,7 +196,7 @@ async def open_case(
             label=f"Кейс «{case['title']}»",
         )
 
-        prize = _draw_prize(case)
+        prize = _draw_prize(case, luck)
         prize_stars = _ton_to_stars(prize["value"])
         # Приз идёт в инвентарь, а не сразу на баланс.
         session.add(
@@ -174,6 +220,9 @@ async def open_case(
         "balance_stars": user.balance_stars,
         "balance_ton": stars_to_ton(user.balance_stars),
         "inventory_added": True,
+        "luck_multiplier": round(luck, 2),
+        "case_luck": round(case_luck, 2),
+        "user_luck": round(user_luck, 2),
     }
 
 

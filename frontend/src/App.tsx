@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type Wallet } from "./api";
+import { api, type SellResult, type Wallet } from "./api";
 import { fmt } from "./lib/format";
 import { getTelegramId, tg } from "./telegram";
 import { Glyph, NavIcon, Ton } from "./ui/Icons";
@@ -9,6 +9,7 @@ import FriendsPage from "./pages/FriendsPage";
 import ProfilePage from "./pages/ProfilePage";
 import CaseModal from "./modals/CaseModal";
 import DepositModal from "./modals/DepositModal";
+import AdminModal from "./modals/AdminModal";
 import InfoModal, { type Transaction } from "./modals/InfoModal";
 import UpgradeGame from "./games/UpgradeGame";
 import RocketGame from "./games/RocketGame";
@@ -49,12 +50,15 @@ export default function App() {
   const [caseId, setCaseId] = useState<string | null>(null);
   const [game, setGame] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [adminOpen, setAdminOpen] = useState(false);
   // Баланс хранится на сервере в звёздах, в интерфейсе показываем TON
   // по курсу starsPerTon. Это один и тот же баланс, а не две валюты.
   const [balanceStars, setBalanceStars] = useState(0);
   const [balance, setBalance] = useState(0);
   const [starsPerTon, setStarsPerTon] = useState(100);
   const [tonEnabled, setTonEnabled] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [luck, setLuck] = useState(1);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [toast, setToast] = useState("");
 
@@ -73,6 +77,8 @@ export default function App() {
     setBalance(wallet.balance_ton);
     setStarsPerTon(wallet.stars_per_ton);
     setTonEnabled(wallet.ton_deposit_enabled);
+    setIsAdmin(Boolean(wallet.is_admin));
+    setLuck(wallet.luck_multiplier ?? 1);
     // История тоже живёт на сервере: после перезагрузки она не пропадёт.
     setTransactions(
       wallet.transactions.map((t) => ({
@@ -100,6 +106,19 @@ export default function App() {
       }
     }
   }, [applyWallet, tgUser?.username]);
+
+  const handleSold = useCallback(
+    (result: SellResult) => {
+      // Мгновенно показываем новый баланс, не дожидаясь ответа кошелька.
+      setBalanceStars(result.balance_stars);
+      setBalance(result.balance_ton);
+      setToast(`+${result.sold_stars} ⭐ за проданный предмет`);
+      tg?.HapticFeedback?.notificationOccurred("success");
+      // Историю операций подтягиваем следом.
+      void refreshWallet();
+    },
+    [refreshWallet],
+  );
 
   useEffect(() => {
     void refreshWallet();
@@ -211,7 +230,11 @@ export default function App() {
             stars={balanceStars}
             telegramId={getTelegramId()}
             games={played}
+            isAdmin={isAdmin}
+            luck={luck}
             onDeposit={() => setDepositOpen(true)}
+            onAdmin={() => setAdminOpen(true)}
+            onSold={handleSold}
             onMenu={(l) => (l === "Друзья" ? go("friends") : setInfo(l))}
           />
         )}
@@ -251,6 +274,7 @@ export default function App() {
           caseId={caseId}
           telegramId={getTelegramId()}
           balance={balance}
+          luck={luck}
           onClose={() => setCaseId(null)}
           onDeposit={() => (setCaseId(null), setDepositOpen(true))}
           onCredited={refreshWallet}
@@ -264,6 +288,13 @@ export default function App() {
           tonEnabled={tonEnabled}
           onClose={() => setDepositOpen(false)}
           onCredited={applyWallet}
+        />
+      )}
+      {adminOpen && (
+        <AdminModal
+          telegramId={getTelegramId()}
+          onClose={() => setAdminOpen(false)}
+          onChanged={refreshWallet}
         />
       )}
       {info && <InfoModal title={info} onClose={() => setInfo(null)} transactions={transactions} />}

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import telegram_bot
 from config import (
+    ADMIN_IDS,
     MAX_STARS_DEPOSIT,
     MAX_TON_DEPOSIT,
     MIN_STARS_DEPOSIT,
@@ -284,6 +285,8 @@ async def get_wallet(
         "stars_per_ton": STARS_PER_TON,
         "ton_deposit_enabled": bool(TON_DEPOSIT_ADDRESS),
         "ton_address": TON_DEPOSIT_ADDRESS or None,
+        "is_admin": bool(user.is_admin or user.telegram_id in ADMIN_IDS),
+        "luck_multiplier": round(float(user.luck_multiplier or 1.0), 2),
         "transactions": [_tx_dict(tx) for tx in transactions],
     }
 
