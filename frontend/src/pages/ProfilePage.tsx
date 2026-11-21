@@ -4,6 +4,14 @@ import { fmt } from "../lib/format";
 import { Glyph, Ton } from "../ui/Icons";
 import Sheet from "../ui/Sheet";
 
+function InventoryArtwork({ item }: { item: InventoryItem }) {
+  const [failed, setFailed] = useState(false);
+  if (!item.image_url || failed) {
+    return <span className="inventory-card-emoji">{item.emoji ?? "🎁"}</span>;
+  }
+  return <img src={item.image_url} alt={item.name} className="inventory-card-img" loading="lazy" onError={() => setFailed(true)} />;
+}
+
 export default function ProfilePage({
   name,
   handle,
@@ -150,38 +158,34 @@ export default function ProfilePage({
         {inventory.length === 0 ? (
           <p className="empty">Инвентарь пуст. Открой кейсы, чтобы получить предметы.</p>
         ) : (
-          <div className="inventory-list">
+          <div className="inventory-grid">
             {inventory.map((item) => (
-              <div key={item.inventory_id} className="inventory-row">
-                <div className="inventory-item">
-                  {item.image_url ? (
-                    <img src={item.image_url} alt="" className="inventory-img" />
-                  ) : (
-                    <span className="inventory-emoji">{item.emoji ?? "🎁"}</span>
-                  )}
-                  <div className="inventory-info">
-                    <div className="inventory-name">{item.name}</div>
-                    <div className="inventory-value">{item.price_stars} ⭐</div>
-                    {item.is_nft && <span className="inventory-nft">NFT</span>}
-                  </div>
+              <article key={item.inventory_id} className={`inventory-card ${item.kind === "prize" ? "case-prize" : "catalog-gift"}`}>
+                <div className="inventory-card-art">
+                  <InventoryArtwork item={item} />
+                  {item.is_nft && <span className="inventory-nft">NFT</span>}
                 </div>
-                <div className="inventory-actions">
+                <div className="inventory-card-info">
+                  <div className="inventory-name" title={item.name}>{item.name}</div>
+                  <div className="inventory-value">{item.price_stars} ⭐</div>
+                </div>
+                <div className="inventory-card-actions">
                   <button
-                    className="btn primary"
+                    className="inventory-action sell"
                     onClick={() => handleSell(item)}
                     disabled={sellBusy.has(item.inventory_id)}
                   >
                     {sellBusy.has(item.inventory_id) ? "…" : "Продать"}
                   </button>
                   <button
-                    className="btn outline"
+                    className="inventory-action withdraw"
                     onClick={() => handleWithdraw(item)}
                     disabled={withdrawBusy.has(item.inventory_id)}
                   >
-                    {withdrawBusy.has(item.inventory_id) ? "…" : "Вывести"}
+                    {withdrawBusy.has(item.inventory_id) ? "…" : "Получить"}
                   </button>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}

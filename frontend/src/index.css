@@ -346,6 +346,23 @@ small { font-size: 12px; }
 .inventory-nft { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: rgba(246, 195, 87, 0.15); color: #f6c357; margin-top: 4px; display: inline-block; }
 .inventory-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .inventory-actions .btn { min-width: 70px; }
+.inventory-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.inventory-card { min-width: 0; display: flex; flex-direction: column; overflow: hidden; padding: 8px; border: 1px solid rgba(143, 227, 255, .2); border-radius: 20px; background: linear-gradient(155deg, rgba(28, 74, 65, .92), rgba(10, 31, 27, .98)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); }
+.inventory-card.case-prize { border-color: color-mix(in srgb, var(--rc) 34%, transparent); }
+.inventory-card-art { position: relative; display: grid; place-items: center; height: 116px; overflow: hidden; border-radius: 15px; background: radial-gradient(70% 70% at 50% 50%, rgba(95, 224, 162, .14), transparent 72%), rgba(0, 0, 0, .18); }
+.inventory-card-img { width: 88px; height: 88px; object-fit: contain; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .28)); }
+.inventory-card-emoji { font-size: 60px; line-height: 1; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, .28)); }
+.inventory-card-art .inventory-nft { position: absolute; top: 6px; right: 6px; margin: 0; }
+.inventory-card-info { min-width: 0; min-height: 48px; display: grid; align-content: center; justify-items: center; gap: 2px; padding: 5px 2px; text-align: center; }
+.inventory-card .inventory-name { width: 100%; font-size: 12px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+.inventory-card .inventory-value { font-size: 11px; color: var(--snow-dim); }
+.inventory-card-actions { display: grid; gap: 6px; margin-top: auto; }
+.inventory-action { min-height: 34px; padding: 0 8px; border-radius: 999px; text-align: center; font-size: 11px; font-weight: 700; transition: filter .15s, transform .12s; }
+.inventory-action.sell { background: linear-gradient(180deg, #f2495d, var(--ribbon-2)); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.22); }
+.inventory-action.withdraw { background: color-mix(in srgb, var(--snow) 90%, var(--frost)); color: #12251f; }
+.inventory-action:disabled { opacity: .55; }
+.inventory-action:active:not(:disabled) { transform: scale(.98); }
+@media (max-width: 360px) { .inventory-grid { gap: 8px; } .inventory-card { padding: 7px; } .inventory-card-art { height: 104px; } }
 
 /* Case opening reference layout */
 .case-screen { position: fixed; inset: 0; z-index: 60; width: 100%; max-width: 100vw; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: calc(14px + env(safe-area-inset-top)) 24px calc(34px + env(safe-area-inset-bottom)); background: var(--night); background-image: radial-gradient(120% 50% at 50% -10%, rgba(28, 74, 65, 0.55), transparent 70%); color: var(--snow); animation: fade .18s; }
