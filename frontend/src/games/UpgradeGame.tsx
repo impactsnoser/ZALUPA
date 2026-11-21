@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, MARGIN, type Gift, type UpgradeResult, type UserProfile } from "../api";
+import { GIFTS } from "../data/gifts";
 import { fmt } from "../lib/format";
 import { getTelegramId, tg } from "../telegram";
 import Sheet from "../ui/Sheet";
@@ -7,7 +8,22 @@ import Sheet from "../ui/Sheet";
 const EMOJI: Record<string, string> = { Мишка: "🧸", Сердце: "💖", Подарок: "🎁", Роза: "🌹", Торт: "🎂", Кубок: "🏆" };
 const SPIN_MS = 5000;
 
-type PickItem = { key: number; name: string; price: number };
+type PickItem = { key: number; name: string; price: number; imageUrl: string | null };
+
+function localGiftImage(name: string): string | null {
+  const normalized = name.trim().toLocaleLowerCase();
+  const gift = GIFTS.find((entry) => entry.name.trim().toLocaleLowerCase() === normalized);
+  return gift ? `/prizes/${gift.image}` : null;
+}
+
+function GiftArt({ name, imageUrl, className }: { name: string; imageUrl: string | null; className: string }) {
+  const [useLocal, setUseLocal] = useState(!imageUrl);
+  const [missing, setMissing] = useState(false);
+  const local = localGiftImage(name);
+  const src = useLocal ? local : imageUrl;
+  if (src && !missing) return <img className={className} src={src} alt="" loading="lazy" onError={() => (useLocal ? setMissing(true) : setUseLocal(true))} />;
+  return <span className={className}>{EMOJI[name] ?? "🎁"}</span>;
+}
 
 export default function UpgradeGame() {
   const telegramId = useMemo(() => getTelegramId(), []);
@@ -90,9 +106,9 @@ export default function UpgradeGame() {
     }
   }
 
-  const fromList: PickItem[] = (user?.inventory ?? []).map((i) => ({ key: i.inventory_id, name: i.name, price: i.price_stars }));
+  const fromList: PickItem[] = (user?.inventory ?? []).map((i) => ({ key: i.inventory_id, name: i.name, price: i.price_stars, imageUrl: i.image_url }));
   const toList: PickItem[] = fromItem
-    ? gifts.filter((g) => g.price_stars > fromItem.price_stars).map((g) => ({ key: g.id, name: g.name, price: g.price_stars }))
+    ? gifts.filter((g) => g.price_stars > fromItem.price_stars).map((g) => ({ key: g.id, name: g.name, price: g.price_stars, imageUrl: g.image_url }))
     : [];
 
   if (loadError) {
@@ -107,12 +123,12 @@ export default function UpgradeGame() {
     );
   }
 
-  const slot = (label: string, name: string | null, price: number | null, hint: string, onClick: () => void, disabled: boolean) => (
+  const slot = (label: string, name: string | null, price: number | null, imageUrl: string | null, hint: string, onClick: () => void, disabled: boolean) => (
     <button className={`slot${name ? " filled" : ""}`} onClick={onClick} disabled={disabled}>
       <small>{label}</small>
       {name ? (
         <>
-          <span className="slot-emoji">{EMOJI[name] ?? "🎁"}</span>
+          <GiftArt className="slot-art" name={name} imageUrl={imageUrl} />
           <b>{name}</b>
           <em>⭐ {price}</em>
         </>
@@ -156,9 +172,9 @@ export default function UpgradeGame() {
       </div>
 
       <div className="swap">
-        {slot("Твой подарок", fromItem?.name ?? null, fromItem?.price_stars ?? null, "Выбери из инвентаря", () => setPicker("from"), rolling)}
+        {slot("Твой подарок", fromItem?.name ?? null, fromItem?.price_stars ?? null, fromItem?.image_url ?? null, "Выбери из инвентаря", () => setPicker("from"), rolling)}
         <span className="swap-arrow">→</span>
-        {slot("Хочу получить", toGift?.name ?? null, toGift?.price_stars ?? null, fromItem ? "Выбери цель" : "Сначала свой", () => setPicker("to"), rolling || !fromItem)}
+        {slot("Хочу получить", toGift?.name ?? null, toGift?.price_stars ?? null, toGift?.image_url ?? null, fromItem ? "Выбери цель" : "Сначала свой", () => setPicker("to"), rolling || !fromItem)}
       </div>
 
       {error && <p className="notice bad">{error}</p>}
@@ -195,7 +211,7 @@ export default function UpgradeGame() {
                     setPicker(null);
                   }}
                 >
-                  <span className="slot-emoji">{EMOJI[it.name] ?? "🎁"}</span>
+                  <GiftArt className="pick-art" name={it.name} imageUrl={it.imageUrl} />
                   <b>{it.name}</b>
                   <em>⭐ {it.price}</em>
                 </button>

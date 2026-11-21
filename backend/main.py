@@ -416,7 +416,19 @@ async def upgrade(
         if target is None:
             raise HTTPException(status_code=404, detail="Целевой подарок не найден")
 
-        from_price, to_price = item.gift.price_stars, target.price_stars
+        # Кейсовые предметы хранятся как prize_* без gift_id. Если подарок
+        # входит в каталог, связываем его по имени и разрешаем апгрейд так же,
+        # как для обычного подарка из каталога.
+        source_gift = item.gift
+        if source_gift is None and item.prize_name:
+            source_gift = await session.scalar(
+                select(Gift).where(Gift.name == item.prize_name)
+            )
+        if source_gift is None:
+            raise HTTPException(status_code=400, detail="Этот предмет нельзя улучшить")
+
+        from_price = item.prize_value_stars if item.gift is None and item.prize_value_stars is not None else source_gift.price_stars
+        to_price = target.price_stars
         if to_price <= from_price:
             raise HTTPException(
                 status_code=400, detail="Целевой подарок должен быть дороже исходного"
@@ -443,7 +455,7 @@ async def upgrade(
         session.add(
             Upgrade(
                 user_id=user.id,
-                from_gift_id=item.gift_id,
+                from_gift_id=source_gift.id,
                 to_gift_id=target.id,
                 chance=chance,
                 is_win=is_win,

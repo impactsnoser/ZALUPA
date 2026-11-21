@@ -294,6 +294,10 @@ small { font-size: 12px; }
 .slot em, .pick em { font-style: normal; font-weight: 700; color: var(--foil); font-size: 13px; }
 .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .pick { display: grid; justify-items: center; gap: 3px; padding: 14px 8px; border-radius: 18px; background: var(--felt-3); }
+.slot-art { width: 64px; height: 64px; object-fit: contain; filter: drop-shadow(0 5px 9px rgba(0,0,0,.3)); }
+.pick-art { display: grid; place-items: center; width: 76px; height: 76px; object-fit: contain; font-size: 48px; line-height: 1; filter: drop-shadow(0 5px 9px rgba(0,0,0,.28)); }
+.pick b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick:active { transform: scale(.98); }
 
 /* Ракетка */
 .flight { position: relative; height: 260px; overflow: hidden; border-radius: 24px; background: linear-gradient(180deg, #06130f, var(--felt-2)); border: 1px solid var(--line); }

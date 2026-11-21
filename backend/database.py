@@ -33,7 +33,9 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from config import WELCOME_STARS
+from gifts import GIFTS
+
+from config import STARS_PER_TON, WELCOME_STARS
 
 TEST_TELEGRAM_ID = 123456789
 
@@ -413,25 +415,40 @@ async def init_db() -> None:
 
 
 async def seed_db() -> None:
-    """Идемпотентный seed: заполняет только пустые таблицы."""
+    """Идемпотентно синхронизирует каталог и начальные данные."""
     async with SessionLocal() as session:
         async with session.begin():
-            gifts_count = await session.scalar(
-                select(func.count()).select_from(Gift)
-            )
-            if gifts_count == 0:
-                session.add_all(
-                    [
-                        Gift(
-                            name=name,
-                            price_stars=price,
-                            image_url=image,
-                            is_nft=is_nft,
-                        )
-                        for name, price, image, is_nft in SEED_GIFTS
-                    ]
-                )
-                await session.flush()
+            # Каталог Telegram-подарков нужен для выбора целей апгрейда.
+            # Цены в gifts.py указаны в TON; внутренняя валюта хранится в Stars
+            # по настроенному курсу проекта. Существующие id и ссылки
+            # инвентаря сохраняются: обновляем записи по названию, новые добавляем.
+            gifts_by_name = {
+                gift.name: gift
+                for gift in (await session.scalars(select(Gift))).all()
+            }
+            for entry in GIFTS:
+                gift = gifts_by_name.get(entry["name"])
+                price_stars = round(entry["value"] * STARS_PER_TON)
+                image_url = f"/prizes/{entry['image']}"
+                if gift is None:
+                    gift = Gift(
+                        name=entry["name"],
+                        price_stars=price_stars,
+                        image_url=image_url,
+                        is_nft=True,
+                    )
+                    session.add(gift)
+                    gifts_by_name[entry["name"]] = gift
+                else:
+                    gift.price_stars = price_stars
+                    gift.image_url = image_url
+                    gift.is_nft = True
+
+            # Legacy demo gifts remain available for old inventory entries.
+            for name, price, image, is_nft in SEED_GIFTS:
+                if name not in gifts_by_name:
+                    session.add(Gift(name=name, price_stars=price, image_url=image, is_nft=is_nft))
+            await session.flush()
 
             user = await session.scalar(
                 select(User).where(User.telegram_id == TEST_TELEGRAM_ID)
