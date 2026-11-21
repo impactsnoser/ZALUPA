@@ -110,43 +110,7 @@ export default function ProfilePage({
           <small className="muted">{handle}</small>
         </div>
       </div>
-      <div className="balance-card">
-        <small>Баланс</small>
-        <b>
-          <Ton size={26} />
-          {fmt(balance)}
-        </b>
-        <small className="balance-sub">
-          {stars} ⭐ — общий баланс Stars и TON
-        </small>
-        <button className="btn primary" onClick={onDeposit}>
-          Пополнить
-        </button>
-      </div>
-      <div className="stats two">
-        <div>
-          <small>Открыто кейсов и игр</small>
-          <b>{games}</b>
-        </div>
-        <div>
-          <small>Подарков в инвентаре</small>
-          <b>{inventory.length}</b>
-        </div>
-      </div>
-      {isAdmin && (
-        <div className="menu">
-          <h3 className="menu-section-title">Управление</h3>
-          <button className="menu-row admin-entry" onClick={onAdmin}>
-            <span className="menu-text">
-              <b>Админ-панель</b>
-              <small>Шансы кейсов, удача и права</small>
-            </span>
-            <Glyph name="chevron" size={16} />
-          </button>
-        </div>
-      )}
-      <div className="menu">
-        <h3 className="menu-section-title">Инвентарь</h3>
+      <div className="inventory-section">
         {inventory.length === 0 ? (
           <p className="empty">Инвентарь пуст. Открой кейсы, чтобы получить предметы.</p>
         ) : (
@@ -186,8 +150,44 @@ export default function ProfilePage({
           </div>
         )}
       </div>
+      <div className="balance-card">
+        <small>Баланс</small>
+        <b>
+          <Ton size={26} />
+          {fmt(balance)}
+        </b>
+        <small className="balance-sub">
+          {stars} ⭐ — общий баланс Stars и TON
+        </small>
+        <button className="btn primary" onClick={onDeposit}>
+          Пополнить
+        </button>
+      </div>
+      <div className="stats two">
+        <div>
+          <small>Открыто кейсов и игр</small>
+          <b>{games}</b>
+        </div>
+        <div>
+          <small>Подарков в инвентаре</small>
+          <b>{inventory.length}</b>
+        </div>
+      </div>
+      {isAdmin && (
+        <div className="menu">
+          <h3 className="menu-section-title">Управление</h3>
+          <button className="menu-row admin-entry" onClick={onAdmin}>
+            <span className="menu-text">
+              <b>Админ-панель</b>
+              <small>Шансы кейсов, удача и права</small>
+            </span>
+            <Glyph name="chevron" size={16} />
+          </button>
+        </div>
+      )}
       <div className="menu">
-        {["История операций", "Мои подарки", "Друзья", "Настройки"].map((label) => (
+        <h3 className="menu-section-title">Разделы</h3>
+        {["История операций", "Друзья", "Настройки"].map((label) => (
           <button key={label} className="menu-row" onClick={() => onMenu(label)}>
             <span className="menu-text">
               <b>{label}</b>
