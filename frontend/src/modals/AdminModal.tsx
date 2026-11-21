@@ -27,6 +27,7 @@ export default function AdminModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
+  const [userPriceFilter, setUserPriceFilter] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -233,6 +234,25 @@ export default function AdminModal({
                           disabled={busy}
                         >
                           {luckLabel(value)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="admin-row">
+                    <span className="admin-label">Множ. цены</span>
+                    <div className="admin-chips">
+                      {[2, 5, 10].map((multiplier) => (
+                        <button
+                          key={multiplier}
+                          type="button"
+                          className={`admin-chip${
+                            userPriceFilter === multiplier ? " active" : ""
+                          }`}
+                          onClick={() => setUserPriceFilter(multiplier)}
+                          disabled={busy}
+                        >
+                          ×{multiplier}
                         </button>
                       ))}
                     </div>
