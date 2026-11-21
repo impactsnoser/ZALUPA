@@ -113,6 +113,20 @@ export interface TonCheckResult {
   amount_stars?: number | null;
 }
 
+export interface SnowfallGame {
+  session_id: number;
+  status: "active" | "chest" | "opened";
+  bet_stars: number;
+  bet_ton: number;
+  tool: { name: string; emoji: string; rarity: string; durability: number; max_durability: number };
+  progress: number;
+  target: number;
+  blocks: { name: string; emoji: string; hp: number; max_hp: number; destroyed: boolean; kind: string }[];
+  reward: { kind: "stars" | "gift" | "nft"; name: string; emoji: string; stars: number; inventory_id: number | null } | null;
+  balance_stars: number;
+  balance_ton: number;
+}
+
 export interface TonConnectDeposit {
   depositId: string;
   transaction: { network: string; validUntil: number; messages: { address: string; amount: string; payload: string }[] };
@@ -323,6 +337,20 @@ export const api = {
     }>("/api/cases/open", {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId, case_id: caseId }),
+    }),
+  getSnowfall: (telegramId: number) =>
+    request<{ game: SnowfallGame | null }>(`/api/snowfall/current?telegram_id=${telegramId}`),
+  startSnowfall: (telegramId: number, betStars: number) =>
+    request<SnowfallGame>("/api/snowfall/start", {
+      method: "POST", body: JSON.stringify({ telegram_id: telegramId, bet_stars: betStars }),
+    }),
+  hitSnowfall: (telegramId: number, sessionId: number) =>
+    request<SnowfallGame>("/api/snowfall/hit", {
+      method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }),
+    }),
+  openSnowfall: (telegramId: number, sessionId: number) =>
+    request<SnowfallGame>("/api/snowfall/open", {
+      method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }),
     }),
   sellInventoryItem: (telegramId: number, inventoryId: number) =>
     request<SellResult>("/api/inventory/sell-item", {

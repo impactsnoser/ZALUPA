@@ -279,6 +279,34 @@ class RocketSession(Base):
     )
 
 
+class SnowfallSession(Base):
+    """Серверный раунд зимней игры с сохранёнными блоками и сундуком."""
+
+    __tablename__ = "snowfall_sessions"
+    __table_args__ = (UniqueConstraint("user_id", "round_key", name="uq_snowfall_user_round"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    round_key: Mapped[str] = mapped_column(String, nullable=False)
+    bet_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    tool_name: Mapped[str] = mapped_column(String, nullable=False)
+    tool_emoji: Mapped[str] = mapped_column(String, nullable=False)
+    tool_rarity: Mapped[str] = mapped_column(String, nullable=False)
+    durability: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_durability: Mapped[int] = mapped_column(Integer, nullable=False)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    target: Mapped[int] = mapped_column(Integer, nullable=False)
+    block_data: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    reward_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    reward_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    reward_emoji: Mapped[str | None] = mapped_column(String, nullable=True)
+    reward_stars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    inventory_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 SEED_GIFTS = [
     # name, price_stars, image_url, is_nft
     ("Мишка", 15, "https://example.com/img/bear.png", False),

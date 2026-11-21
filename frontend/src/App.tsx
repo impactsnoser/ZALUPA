@@ -14,6 +14,7 @@ import InfoModal, { type Transaction } from "./modals/InfoModal";
 import UpgradeGame from "./games/UpgradeGame";
 import RocketGame from "./games/RocketGame";
 import MinesGame from "./games/MinesGame";
+import SnowfallGame from "./games/SnowfallGame";
 
 type Tab = "cases" | "games" | "friends" | "profile";
 
@@ -262,6 +263,15 @@ export default function App() {
             {game === "Апгрейд" && <UpgradeGame />}
             {game === "Ракетка" && <RocketGame {...gameProps} />}
             {game === "Мины" && <MinesGame {...gameProps} />}
+            {game === "Ледяная шахта" && (
+              <SnowfallGame
+                balance={balance}
+                starsPerTon={starsPerTon}
+                onBalance={(stars, ton) => { setBalanceStars(stars); setBalance(ton); }}
+                onChanged={refreshWallet}
+                onDeposit={() => (setGame(null), setDepositOpen(true))}
+              />
+            )}
           </div>
         </div>
       )}

@@ -21,12 +21,18 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M5 12h22L16 29z" opacity=".5" />
     </svg>
   ),
+  snowfall: (
+    <svg viewBox="0 0 32 32" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 3v26M5 9l22 14M5 23 27 9M12 6l4-3 4 3M12 26l4 3 4-3M6 13 5 9l4-1M23 24l4-1-1-4M6 19l-1 4 4 1M23 8l4 1-1 4" />
+    </svg>
+  ),
 };
 
 const GAMES = [
   { id: "Апгрейд", icon: "upgrade", tone: "gold", text: "Обменяй подарок на более дорогой" },
   { id: "Ракетка", icon: "rocket", tone: "red", text: "Забери выигрыш до того, как она улетит" },
   { id: "Мины", icon: "mines", tone: "ice", text: "Открывай клетки и обходи мины" },
+  { id: "Ледяная шахта", icon: "snowfall", tone: "ice", text: "Разбивай ледяные блоки и открывай сундуки" },
 ];
 
 export default function GamesPage({ onPlay }: { onPlay: (game: string) => void }) {

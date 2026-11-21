@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+import json
 import secrets
 from datetime import datetime, timezone
 from math import comb
@@ -20,9 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import MAX_LUCK, STARS_PER_TON
 from database import (
     AppSetting,
+    Gift,
     InventoryItem,
     MinesSession,
     RocketSession,
+    SnowfallSession,
     User,
     get_session,
 )
@@ -37,6 +40,21 @@ MINES_RTP = 0.95
 ROCKET_RTP = 0.95
 ROCKET_GROWTH = 0.08889
 ROCKET_MAX_MULTIPLIER = 100.0
+
+SNOWFALL_TOOLS = [
+    {"name": "Ледяная кирка", "emoji": "🪓", "rarity": "Обычная", "durability": 6},
+    {"name": "Ледяной молот", "emoji": "🔨", "rarity": "Необычная", "durability": 8},
+    {"name": "Полярная кирка", "emoji": "⛏️", "rarity": "Редкая", "durability": 10},
+    {"name": "Кристальный бур", "emoji": "💎", "rarity": "Эпическая", "durability": 12},
+    {"name": "Северная звезда", "emoji": "🌟", "rarity": "Легендарная", "durability": 15},
+]
+SNOWFALL_BLOCKS = [
+    {"name": "Хрупкий лёд", "emoji": "◇", "hp": 1, "kind": "ice"},
+    {"name": "Голубой лёд", "emoji": "🔹", "hp": 2, "kind": "ice"},
+    {"name": "Кристальная жила", "emoji": "🔷", "hp": 3, "kind": "crystal"},
+    {"name": "Древний лёд", "emoji": "◈", "hp": 4, "kind": "stone"},
+]
+SNOWFALL_RTP = 0.9
 
 
 # ---------------------------------------------------------------- кейсы
@@ -582,5 +600,237 @@ async def cashout_rocket(
                 reference=f"rocket:{game.id}",
             )
             result = _rocket_state(game, user)
+
+    return result
+
+
+# ---------------------------------------------------------- зимняя шахта
+
+SNOWFALL_TARGET = 8
+
+
+def _snowfall_state(game: SnowfallSession, user: User) -> dict:
+    return {
+        "session_id": game.id,
+        "status": game.status,
+        "bet_stars": game.bet_stars,
+        "bet_ton": stars_to_ton(game.bet_stars),
+        "tool": {
+            "name": game.tool_name,
+            "emoji": game.tool_emoji,
+            "rarity": game.tool_rarity,
+            "durability": game.durability,
+            "max_durability": game.max_durability,
+        },
+        "progress": game.progress,
+        "target": game.target,
+        "blocks": json.loads(game.block_data),
+        "reward": {
+            "kind": game.reward_kind,
+            "name": game.reward_name,
+            "emoji": game.reward_emoji,
+            "stars": game.reward_stars,
+            "inventory_id": game.inventory_id,
+        } if game.status == "opened" else None,
+        "balance_stars": user.balance_stars,
+        "balance_ton": stars_to_ton(user.balance_stars),
+    }
+
+
+class SnowfallRequest(BaseModel):
+    telegram_id: int
+    session_id: int | None = None
+    bet_stars: int | None = Field(default=None, ge=1, le=10_000_000)
+
+
+@router.get("/snowfall/current")
+async def current_snowfall(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(telegram_id, init_data)
+    user = await _user_by_telegram_id(session, telegram_id)
+    game = await session.scalar(
+        select(SnowfallSession)
+        .where(SnowfallSession.user_id == user.id, SnowfallSession.status.in_(["active", "chest"]))
+        .order_by(SnowfallSession.id.desc())
+    )
+    return {"game": _snowfall_state(game, user) if game else None}
+
+
+@router.post("/snowfall/start")
+async def start_snowfall(
+    req: SnowfallRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(req.telegram_id, init_data)
+    if req.bet_stars is None:
+        raise HTTPException(status_code=422, detail="Укажите ставку")
+
+    async with session.begin():
+        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        existing = await session.scalar(
+            select(SnowfallSession).where(
+                SnowfallSession.user_id == user.id,
+                SnowfallSession.status.in_(["active", "chest"]),
+            ).order_by(SnowfallSession.id.desc()).with_for_update()
+        )
+        if existing:
+            return _snowfall_state(existing, user)
+        if user.balance_stars < req.bet_stars:
+            raise HTTPException(status_code=400, detail="Недостаточно средств")
+
+        tool_roll = secrets.randbelow(1000)
+        if tool_roll < 520:
+            tool = SNOWFALL_TOOLS[0]
+        elif tool_roll < 800:
+            tool = SNOWFALL_TOOLS[1]
+        elif tool_roll < 940:
+            tool = SNOWFALL_TOOLS[2]
+        elif tool_roll < 990:
+            tool = SNOWFALL_TOOLS[3]
+        else:
+            tool = SNOWFALL_TOOLS[4]
+
+        blocks = []
+        for _ in range(SNOWFALL_TARGET):
+            template = secrets.choice(SNOWFALL_BLOCKS)
+            # A tiny bit of variation makes each block feel less like a static row.
+            hp = template["hp"]
+            blocks.append({**template, "hp": hp, "max_hp": hp, "destroyed": False})
+
+        user.balance_stars -= req.bet_stars
+        _add_transaction(
+            session, user, amount=-req.bet_stars, kind="snowfall_bet",
+            label="Зимняя шахта: ставка",
+        )
+        game = SnowfallSession(
+            user_id=user.id,
+            round_key=secrets.token_urlsafe(18),
+            bet_stars=req.bet_stars,
+            tool_name=tool["name"],
+            tool_emoji=tool["emoji"],
+            tool_rarity=tool["rarity"],
+            durability=tool["durability"],
+            max_durability=tool["durability"],
+            progress=0,
+            target=SNOWFALL_TARGET,
+            block_data=json.dumps(blocks, ensure_ascii=False),
+            status="active",
+        )
+        session.add(game)
+        await session.flush()
+        result = _snowfall_state(game, user)
+
+    return result
+
+
+@router.post("/snowfall/hit")
+async def hit_snowfall(
+    req: SnowfallRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(req.telegram_id, init_data)
+    if req.session_id is None:
+        raise HTTPException(status_code=422, detail="Партия не указана")
+    async with session.begin():
+        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        game = await session.scalar(
+            select(SnowfallSession).where(
+                SnowfallSession.id == req.session_id,
+                SnowfallSession.user_id == user.id,
+            ).with_for_update()
+        )
+        if game is None:
+            raise HTTPException(status_code=404, detail="Партия не найдена")
+        if game.status != "active":
+            raise HTTPException(status_code=409, detail="Раунд уже завершён")
+
+        blocks = json.loads(game.block_data)
+        block = next((item for item in blocks if not item["destroyed"]), None)
+        if block is not None:
+            game.durability -= 1
+            block["hp"] -= 1
+            if block["hp"] <= 0:
+                block["hp"] = 0
+                block["destroyed"] = True
+                game.progress += 1
+            game.block_data = json.dumps(blocks, ensure_ascii=False)
+
+        if game.progress >= game.target or game.durability <= 0:
+            game.status = "chest"
+            game.finished_at = datetime.now(timezone.utc)
+        result = _snowfall_state(game, user)
+
+    return result
+
+
+@router.post("/snowfall/open")
+async def open_snowfall_chest(
+    req: SnowfallRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(req.telegram_id, init_data)
+    if req.session_id is None:
+        raise HTTPException(status_code=422, detail="Сундук не указан")
+    async with session.begin():
+        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        game = await session.scalar(
+            select(SnowfallSession).where(
+                SnowfallSession.id == req.session_id,
+                SnowfallSession.user_id == user.id,
+            ).with_for_update()
+        )
+        if game is None:
+            raise HTTPException(status_code=404, detail="Сундук не найден")
+        if game.status == "opened":
+            return _snowfall_state(game, user)
+        if game.status != "chest":
+            raise HTTPException(status_code=409, detail="Сначала завершите раунд")
+
+        gifts = (await session.scalars(select(Gift))).all()
+        nft_gifts = [gift for gift in gifts if gift.is_nft]
+        rare_gifts = [gift for gift in gifts if not gift.is_nft and gift.price_stars <= 250]
+        full_run = game.progress >= game.target
+        roll = secrets.randbelow(10_000)
+        if full_run and nft_gifts and roll < 50:
+            gift = secrets.choice(nft_gifts)
+            item = InventoryItem(user_id=user.id, gift_id=gift.id)
+            session.add(item)
+            await session.flush()
+            game.reward_kind = "nft"
+            game.reward_name = gift.name
+            game.reward_emoji = "💎"
+            game.reward_stars = 0
+            game.inventory_id = item.id
+        elif game.progress >= 5 and rare_gifts and roll < 450:
+            gift = secrets.choice(rare_gifts)
+            item = InventoryItem(user_id=user.id, gift_id=gift.id)
+            session.add(item)
+            await session.flush()
+            game.reward_kind = "gift"
+            game.reward_name = gift.name
+            game.reward_emoji = "🎁"
+            game.reward_stars = 0
+            game.inventory_id = item.id
+        else:
+            ratio = game.progress / max(1, game.target)
+            payout = max(1, int(round(game.bet_stars * (0.12 + 0.88 * ratio))))
+            user.balance_stars += payout
+            game.reward_kind = "stars"
+            game.reward_name = "Звёзды"
+            game.reward_emoji = "⭐"
+            game.reward_stars = payout
+            _add_transaction(
+                session, user, amount=payout, kind="snowfall_reward",
+                label=f"Зимняя шахта: сундук ({game.progress}/{game.target})",
+                reference=f"snowfall:{game.id}",
+            )
+        game.status = "opened"
+        result = _snowfall_state(game, user)
 
     return result
