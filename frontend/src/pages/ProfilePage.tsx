@@ -118,7 +118,31 @@ export default function ProfilePage({
           <small className="muted">{handle}</small>
         </div>
       </div>
+      <div className="balance-card">
+        <small>Баланс</small>
+        <b>
+          <Ton size={26} />
+          {fmt(balance)}
+        </b>
+        <small className="balance-sub">
+          {stars} ⭐ — общий баланс Stars и TON
+        </small>
+        <button className="btn primary" onClick={onDeposit}>
+          Пополнить
+        </button>
+      </div>
+      <div className="stats two">
+        <div>
+          <small>Открыто кейсов и игр</small>
+          <b>{games}</b>
+        </div>
+        <div>
+          <small>Подарков в инвентаре</small>
+          <b>{inventory.length}</b>
+        </div>
+      </div>
       <div className="inventory-section">
+        <h3 className="menu-section-title">Инвентарь</h3>
         {inventory.length === 0 ? (
           <p className="empty">Инвентарь пуст. Открой кейсы, чтобы получить предметы.</p>
         ) : (
@@ -153,29 +177,6 @@ export default function ProfilePage({
             ))}
           </div>
         )}
-      </div>
-      <div className="balance-card">
-        <small>Баланс</small>
-        <b>
-          <Ton size={26} />
-          {fmt(balance)}
-        </b>
-        <small className="balance-sub">
-          {stars} ⭐ — общий баланс Stars и TON
-        </small>
-        <button className="btn primary" onClick={onDeposit}>
-          Пополнить
-        </button>
-      </div>
-      <div className="stats two">
-        <div>
-          <small>Открыто кейсов и игр</small>
-          <b>{games}</b>
-        </div>
-        <div>
-          <small>Подарков в инвентаре</small>
-          <b>{inventory.length}</b>
-        </div>
       </div>
       <div className="menu">
         <h3 className="menu-section-title">Разделы</h3>
