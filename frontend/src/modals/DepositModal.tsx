@@ -30,6 +30,7 @@ export default function DepositModal({
 }) {
   const [method, setMethod] = useState<Method | null>(null);
   const [amount, setAmount] = useState(500);
+  const [amountInput, setAmountInput] = useState("500");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -42,10 +43,25 @@ export default function DepositModal({
   const [depositStars, setDepositStars] = useState(0);
 
   const tonRate = starsPerTon > 0 ? starsPerTon : 100;
+  const amountValid = method === "stars"
+    ? Number.isInteger(amount) && amount >= 1 && amount <= 10_000
+    : amount >= 0.5 && amount <= 1000;
+
+  function updateAmount(next: number) {
+    setAmount(next);
+    setAmountInput(String(next));
+  }
+
+  function updateAmountInput(value: string) {
+    setAmountInput(value);
+    const parsed = Number(value.replace(",", "."));
+    setAmount(Number.isFinite(parsed) ? parsed : 0);
+  }
 
   function choose(next: Method) {
+    const initialAmount = next === "stars" ? 500 : 2;
     setMethod(next);
-    setAmount(next === "stars" ? 500 : 2);
+    updateAmount(initialAmount);
     setError("");
     setNote("");
     setDone(null);
@@ -93,6 +109,7 @@ export default function DepositModal({
   }
 
   async function payStars() {
+    if (!amountValid) { setError("Введите целое число Stars от 1 до 10 000."); return; }
     setBusy(true);
     setError("");
     setNote("");
@@ -117,6 +134,7 @@ export default function DepositModal({
   }
 
   async function createTonInvoice() {
+    if (!amountValid) { setError("Введите сумму от 0,5 до 1 000 TON."); return; }
     setBusy(true);
     setError("");
     setNote("");
@@ -133,6 +151,7 @@ export default function DepositModal({
 
   async function createWalletDeposit() {
     if (!tonWallet) { await tonConnectUI.openModal(); return; }
+    if (!amountValid) { setError("Введите сумму от 0,5 до 1 000 TON."); return; }
     setBusy(true); setError(""); setNote("");
     try {
       const deposit = await api.createDeposit(telegramId, amount);
@@ -223,17 +242,18 @@ export default function DepositModal({
                   <button
                     key={v}
                     className={`chip${amount === v ? " on" : ""}`}
-                    onClick={() => setAmount(v)}
-                    disabled={busy}
+                    onClick={() => updateAmount(v)}
+                    disabled={busy || Boolean(pendingStars)}
                   >
                     ⭐ {v}
                   </button>
                 ))}
               </div>
+              <label className="deposit-custom-amount"><span>Своя сумма · 1–10 000 Stars</span><span className="deposit-custom-value"><input type="text" inputMode="numeric" value={amountInput} onChange={(event) => updateAmountInput(event.target.value)} disabled={busy || Boolean(pendingStars)} aria-label="Сумма пополнения в Stars" /><b>Stars</b></span></label>
               <p className="muted small">
                 К зачислению: <b>{amount} ⭐</b> ≈ {fmt(amount / tonRate)} ◆
               </p>
-              <button className="btn primary wide" onClick={payStars} disabled={busy}>
+              <button className="btn primary wide" onClick={payStars} disabled={busy || !amountValid}>
                 {busy ? "Создаём счёт…" : `Пополнить на ${amount} ⭐`}
               </button>
               {pendingStars && !tg?.openInvoice && (
@@ -253,13 +273,14 @@ export default function DepositModal({
                   <button
                     key={v}
                     className={`chip${amount === v ? " on" : ""}`}
-                    onClick={() => setAmount(v)}
+                    onClick={() => updateAmount(v)}
                     disabled={busy || Boolean(tonInvoice)}
                   >
                     <Ton size={14} /> {v}
                   </button>
                 ))}
               </div>
+              <label className="deposit-custom-amount"><span>Своя сумма · 0,5–1 000 TON</span><span className="deposit-custom-value"><input type="text" inputMode="decimal" value={amountInput} onChange={(event) => updateAmountInput(event.target.value)} disabled={busy || Boolean(tonInvoice)} aria-label="Сумма пополнения в TON" /><Ton size={15} /></span></label>
 
               {tonInvoice ? (
                 <div className="pay-details">
@@ -293,7 +314,7 @@ export default function DepositModal({
                 <button
                   className="btn primary wide"
                   onClick={createWalletDeposit}
-                  disabled={busy || !tonEnabled}
+                  disabled={busy || !tonEnabled || !amountValid}
                 >
                   {busy ? "Ожидаем подтверждение…" : !tonEnabled ? "TON пока недоступен" : tonWallet ? `Перевести ${amount} TON` : "Подключить кошелёк"}
                 </button>

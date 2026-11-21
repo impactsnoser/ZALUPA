@@ -12,6 +12,7 @@ type GameProps = {
 
 export default function MinesGame({ balance, onSpend, onWin, onDeposit }: GameProps) {
   const [bet, setBet] = useState(1);
+  const [betInput, setBetInput] = useState("1");
   const [mineCount, setMineCount] = useState(3);
   const [cells, setCells] = useState<Cell[]>(Array(25).fill("closed"));
   const [mines, setMines] = useState<Set<number>>(new Set());
@@ -20,7 +21,13 @@ export default function MinesGame({ balance, onSpend, onWin, onDeposit }: GamePr
   const step = 0.12 + mineCount * 0.025;
   const mult = Number((1 + opened * step).toFixed(2));
 
+  function updateBet(value: number) {
+    setBet(value);
+    setBetInput(String(value));
+  }
+
   function start() {
+    if (!Number.isFinite(bet) || bet < 0.01 || bet > 100_000) return;
     if (balance < bet) return onDeposit();
     onSpend(bet, "Мины");
     const order = Array.from({ length: 25 }, (_, i) => i).sort(() => Math.random() - 0.5);
@@ -79,15 +86,15 @@ export default function MinesGame({ balance, onSpend, onWin, onDeposit }: GamePr
       {phase === "lost" && <p className="notice bad">Мина. Ставка сгорела.</p>}
       {phase === "won" && <p className="notice good">Выигрыш зачислен на баланс.</p>}
       <div className="row2">
-        <div className="stepper">
-          <button onClick={() => setBet(Math.max(0.5, bet - 0.5))} disabled={locked} aria-label="Меньше ставка">
+        <div className="stepper bet-control">
+          <button onClick={() => updateBet(Math.max(0.5, bet - 0.5))} disabled={locked} aria-label="Меньше ставка">
             −
           </button>
-          <b>
-            <Ton size={16} />
-            {fmt(bet)}
-          </b>
-          <button onClick={() => setBet(bet + 0.5)} disabled={locked} aria-label="Больше ставка">
+          <label className="bet-value" aria-label="Ставка в TON">
+            <Ton size={15} />
+            <input type="text" inputMode="decimal" value={betInput} onChange={(event) => { const value = event.target.value.replace(",", "."); setBetInput(value); setBet(Number(value) || 0); }} disabled={locked} />
+          </label>
+          <button onClick={() => updateBet(Math.min(100_000, bet + 0.5))} disabled={locked} aria-label="Больше ставка">
             +
           </button>
         </div>
@@ -106,7 +113,7 @@ export default function MinesGame({ balance, onSpend, onWin, onDeposit }: GamePr
           Забрать {fmt(bet * mult)}
         </button>
       ) : (
-        <button className="btn primary wide" onClick={start} disabled={locked}>
+        <button className="btn primary wide" onClick={start} disabled={locked || !Number.isFinite(bet) || bet < 0.01 || bet > 100_000}>
           {locked ? "Открой клетку" : "Начать игру"}
         </button>
       )}

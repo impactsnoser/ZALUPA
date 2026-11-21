@@ -190,7 +190,7 @@ export default function App() {
   }
 
   const closeGame = () => setGame(null);
-  const gameProps = { balance, onSpend: spend, onWin: win, onDeposit: () => (setGame(null), setDepositOpen(true)) };
+  const gameProps = { balance, onSpend: spend, onWin: win, onDeposit: () => setDepositOpen(true) };
 
   return (
     <div className="app">
@@ -269,7 +269,7 @@ export default function App() {
                 starsPerTon={starsPerTon}
                 onBalance={(stars, ton) => { setBalanceStars(stars); setBalance(ton); }}
                 onChanged={refreshWallet}
-                onDeposit={() => (setGame(null), setDepositOpen(true))}
+                onDeposit={() => setDepositOpen(true)}
               />
             )}
           </div>

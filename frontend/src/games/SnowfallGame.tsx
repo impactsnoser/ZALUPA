@@ -13,17 +13,27 @@ type Props = {
 };
 
 const BETS = [0.5, 1, 2, 5];
+const HIT_ANIMATION_MS = 720;
+
+function getTargetRow(state: GameState): number {
+  const firstVisible = Math.max(0, Math.min(state.progress - 3, state.blocks.length - 5));
+  const targetIndex = state.blocks.findIndex((block) => !block.destroyed);
+  return targetIndex < 0 ? 4 : Math.max(0, Math.min(4, targetIndex - firstVisible));
+}
 
 export default function SnowfallGame({ balance, starsPerTon, onBalance, onChanged, onDeposit }: Props) {
   const [game, setGame] = useState<GameState | null>(null);
   const [bet, setBet] = useState(1);
+  const [betInput, setBetInput] = useState("1");
   const [falling, setFalling] = useState(false);
+  const [toolDistance, setToolDistance] = useState(-20);
+  const [flightDistance, setFlightDistance] = useState(15);
   const [opening, setOpening] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const telegramId = getTelegramId();
-  const betStars = Math.max(1, Math.round(bet * starsPerTon));
+  const betStars = Number.isFinite(bet) && bet >= 0.01 && bet <= 100_000 ? Math.max(1, Math.round(bet * starsPerTon)) : 0;
 
   useEffect(() => {
     let live = true;
@@ -42,18 +52,52 @@ export default function SnowfallGame({ balance, starsPerTon, onBalance, onChange
   const toolPercent = game ? Math.max(0, (game.tool.durability / game.tool.max_durability) * 100) : 100;
   const progressPercent = game ? Math.min(100, (game.progress / game.target) * 100) : 0;
   const currentBlock = visibleBlocks.find((block) => !block.destroyed);
-  const targetRow = Math.max(0, visibleBlocks.findIndex((block) => !block.destroyed));
-  const fallStyle = { "--fall-distance": `${targetRow * 53 + 35}px` } as CSSProperties;
+  const fallStyle = {
+    "--tool-distance": `${toolDistance}px`,
+    "--fall-distance": `${flightDistance}px`,
+    "--rest-distance": game ? `${toolDistance}px` : "-20px",
+  } as CSSProperties;
+
+  function updateBet(value: number) {
+    setBet(value);
+    setBetInput(String(value));
+  }
+
+  async function animateHit(activeGame: GameState) {
+    const fromRow = getTargetRow(activeGame);
+    const block = activeGame.blocks.find((item) => !item.destroyed);
+    const destinationRow = Math.min(4, fromRow + (block && block.hp <= 1 ? 1 : 0));
+    const destination = destinationRow * 53 + 35;
+    setFlightDistance(destination);
+    setFalling(true);
+    const animation = new Promise<void>((resolve) => window.setTimeout(resolve, HIT_ANIMATION_MS));
+    try {
+      const result = await api.hitSnowfall(telegramId, activeGame.session_id);
+      setGame(result);
+      await animation;
+      setToolDistance(destination);
+      tg?.HapticFeedback?.impactOccurred(result.progress > activeGame.progress ? "heavy" : "light");
+      if (result.progress > activeGame.progress) tg?.HapticFeedback?.notificationOccurred("success");
+      return result;
+    } catch (err) {
+      await animation;
+      throw err;
+    } finally {
+      setFalling(false);
+    }
+  }
 
   async function start() {
+    if (!Number.isFinite(bet) || bet < 0.01 || bet > 100_000) return;
     if (balance < bet) return onDeposit();
     setBusy(true); setError("");
     try {
-      const result = await api.startSnowfall(telegramId, betStars);
-      setGame(result);
-      onBalance(result.balance_stars, result.balance_ton);
+      const started = await api.startSnowfall(telegramId, betStars);
+      setGame(started);
+      onBalance(started.balance_stars, started.balance_ton);
       tg?.HapticFeedback?.impactOccurred("medium");
       void onChanged();
+      if (started.status === "active") await animateHit(started);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось начать раунд");
     } finally { setBusy(false); }
@@ -61,19 +105,12 @@ export default function SnowfallGame({ balance, starsPerTon, onBalance, onChange
 
   async function hit() {
     if (!game || busy || game.status !== "active") return;
-    setBusy(true); setError(""); setFalling(true);
-    window.setTimeout(async () => {
-      try {
-        const result = await api.hitSnowfall(telegramId, game.session_id);
-        setGame(result);
-        tg?.HapticFeedback?.impactOccurred(result.progress > game.progress ? "heavy" : "light");
-        if (result.progress > game.progress) tg?.HapticFeedback?.notificationOccurred("success");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Удар не прошёл");
-      } finally {
-        setFalling(false); setBusy(false);
-      }
-    }, 520);
+    setBusy(true); setError("");
+    try {
+      await animateHit(game);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Удар не прошёл");
+    } finally { setBusy(false); }
   }
 
   async function openChest() {
@@ -107,7 +144,7 @@ export default function SnowfallGame({ balance, starsPerTon, onBalance, onChange
       </div>
 
       <div className={`snowfall-field ${falling ? "is-falling" : ""} ${game?.status === "chest" ? "has-chest" : ""}`}>
-        <img className={`snowfall-tool ${falling ? "drop" : ""}`} style={fallStyle} src="/snowfall/pickaxe.gif" alt="" aria-hidden="true" />
+        {game && game.status !== "opened" && <img className={`snowfall-tool ${falling ? "drop" : ""}`} style={fallStyle} src="/snowfall/pickaxe.gif" alt="" aria-hidden="true" />}
         <div className="snowfall-board" aria-label="Поле ледяных блоков">
           {Array.from({ length: 25 }, (_, cellIndex) => {
             const row = Math.floor(cellIndex / 5);
@@ -146,17 +183,18 @@ export default function SnowfallGame({ balance, starsPerTon, onBalance, onChange
       ) : game?.status === "active" ? (
         <div className="snowfall-tool-info">
           <span className="snowfall-tool-badge"><img src="/snowfall/pickaxe.gif" alt="" /></span>
-          <span><b>{game.tool.name}</b><small>{game.tool.rarity} · прочность {game.tool.durability}/{game.tool.max_durability}</small></span>
+          <span><b>{game.tool.name}</b><small>{game.tool.rarity} · ставка {fmt(game.bet_ton)} TON · прочность {game.tool.durability}/{game.tool.max_durability}</small></span>
           <div className="snowfall-durability"><i style={{ width: `${toolPercent}%` }} /></div>
         </div>
       ) : (
         <div className="snowfall-intro"><b>Разбей лёд. Открой сундук.</b><small>Каждый блок двигает шкалу награды. Баланс за удары не начисляется.</small></div>
       )}
 
-      {game?.status !== "opened" && game?.status !== "chest" && (
+      {!game && (
         <div className="snowfall-bet">
           <small>Ставка раунда</small>
-          <div>{BETS.map((amount) => <button key={amount} className={bet === amount ? "selected" : ""} onClick={() => setBet(amount)} disabled={Boolean(game) || busy}>{fmt(amount)} <Ton size={13} /></button>)}</div>
+          <div>{BETS.map((amount) => <button key={amount} className={bet === amount ? "selected" : ""} onClick={() => updateBet(amount)} disabled={Boolean(game) || busy}>{fmt(amount)} <Ton size={13} /></button>)}</div>
+          <label className="snowfall-custom-bet"><span>Своя ставка · от 0,01 TON</span><span className="snowfall-bet-input"><input type="text" inputMode="decimal" value={betInput} onChange={(event) => { const value = event.target.value.replace(",", "."); setBetInput(value); setBet(Number(value) || 0); }} disabled={busy} /><Ton size={15} /></span></label>
         </div>
       )}
 
@@ -165,7 +203,7 @@ export default function SnowfallGame({ balance, starsPerTon, onBalance, onChange
         game?.status === "active" ? <button className="btn gold wide snowfall-action" onClick={hit} disabled={busy}>{falling ? "Удар!" : busy ? "..." : currentBlock ? "Крутить · ударить лёд" : "Крутить"}</button> :
         game?.status === "chest" ? <button className="btn gold wide snowfall-action" onClick={openChest} disabled={busy}>{opening ? "Сундук открывается…" : "Открыть сундук"}</button> :
         game?.status === "opened" ? <button className="btn primary wide snowfall-action" onClick={() => setGame(null)}>Играть ещё раз</button> :
-        <button className="btn primary wide snowfall-action" onClick={start} disabled={busy}>{busy ? "Готовим инструмент…" : "Играть"}</button>}
+        <button className="btn primary wide snowfall-action" onClick={start} disabled={busy || betStars <= 0}>{busy ? "Кирка в деле…" : "Играть"}</button>}
 
       <div className="snowfall-odds"><span>🎁</span><p>При прогрессе 5+ шанс редкого подарка — 4%; на полном поле — ещё 0,5% шанс NFT.</p></div>
       <div className="snowfall-tool-pool" aria-label="Редкость инструментов">
