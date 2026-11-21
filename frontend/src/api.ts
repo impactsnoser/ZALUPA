@@ -85,7 +85,6 @@ export interface Wallet {
   ton_deposit_enabled: boolean;
   ton_address: string | null;
   is_admin?: boolean;
-  luck_multiplier?: number;
   transactions: WalletTransaction[];
 }
 
@@ -348,6 +347,11 @@ export const api = {
     request<{ ok: boolean; user: AdminUser }>(
       `/api/admin/users/${targetId}/luck?telegram_id=${telegramId}`,
       { method: "POST", body: JSON.stringify({ luck }) },
+    ),
+  addBalance: (telegramId: number, targetId: number, amountStars: number) =>
+    request<{ ok: boolean; user: AdminUser }>(
+      `/api/admin/users/${targetId}/balance?telegram_id=${telegramId}`,
+      { method: "POST", body: JSON.stringify({ amount_stars: amountStars }) },
     ),
   adminSettings: (telegramId: number) =>
     request<AdminSettings>(`/api/admin/settings?telegram_id=${telegramId}`),

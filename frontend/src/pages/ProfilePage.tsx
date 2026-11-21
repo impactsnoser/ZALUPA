@@ -13,7 +13,6 @@ export default function ProfilePage({
   telegramId,
   games,
   isAdmin,
-  luck,
   onDeposit,
   onAdmin,
   onSold,
@@ -27,7 +26,6 @@ export default function ProfilePage({
   telegramId: number;
   games: number;
   isAdmin: boolean;
-  luck: number;
   onDeposit: () => void;
   onAdmin: () => void;
   onSold: (result: SellResult) => void;
@@ -120,7 +118,6 @@ export default function ProfilePage({
         </b>
         <small className="balance-sub">
           {stars} ⭐ — общий баланс Stars и TON
-          {luck > 1 && <span className="luck-badge">удача ×{luck}</span>}
         </small>
         <button className="btn primary" onClick={onDeposit}>
           Пополнить

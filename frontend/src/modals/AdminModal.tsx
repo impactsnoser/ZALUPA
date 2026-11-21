@@ -23,6 +23,7 @@ export default function AdminModal({
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [cases, setCases] = useState<AdminCaseSetting[]>([]);
   const [maxLuck, setMaxLuck] = useState(5);
+  const [amounts, setAmounts] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -103,6 +104,31 @@ export default function AdminModal({
       if (user.telegram_id === telegramId) onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось изменить удачу");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addBalance(user: AdminUser) {
+    const raw = (amounts[user.telegram_id] ?? "").trim();
+    const amount = Math.round(Number(raw));
+    if (!Number.isFinite(amount) || amount < 1) {
+      setError("Введите сумму больше 0");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNote("");
+    try {
+      const result = await api.addBalance(telegramId, user.telegram_id, amount);
+      patchUser(result.user);
+      setAmounts((cur) => ({ ...cur, [user.telegram_id]: "" }));
+      setNote(
+        `${user.username ? `@${user.username}` : user.telegram_id}: зачислено ${amount} ⭐`,
+      );
+      if (user.telegram_id === telegramId) onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось начислить баланс");
     } finally {
       setBusy(false);
     }
@@ -209,6 +235,50 @@ export default function AdminModal({
                           {luckLabel(value)}
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  <div className="admin-row">
+                    <span className="admin-label">Баланс</span>
+                    <div className="admin-balance">
+                      <input
+                        className="admin-input small"
+                        inputMode="numeric"
+                        placeholder="Сумма ⭐"
+                        value={amounts[user.telegram_id] ?? ""}
+                        onChange={(event) =>
+                          setAmounts((cur) => ({
+                            ...cur,
+                            [user.telegram_id]: event.target.value.replace(/[^\d]/g, ""),
+                          }))
+                        }
+                      />
+                      <div className="admin-chips">
+                        {[100, 500, 1000].map((value) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className="admin-chip"
+                            onClick={() =>
+                              setAmounts((cur) => ({
+                                ...cur,
+                                [user.telegram_id]: String(value),
+                              }))
+                            }
+                            disabled={busy}
+                          >
+                            +{value}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn primary small"
+                        onClick={() => void addBalance(user)}
+                        disabled={busy}
+                      >
+                        Начислить
+                      </button>
                     </div>
                   </div>
                 </div>

@@ -152,14 +152,9 @@ def _draw_prize(case: dict, luck: float = 1.0) -> dict:
 
 
 @router.get("/cases")
-async def list_cases(session: AsyncSession = Depends(get_session)):
+async def list_cases():
     """Публичный каталог. Цены и призы всё равно проверяются на сервере."""
-    result = []
-    for case in CASES:
-        item = dict(case)
-        item["luck_multiplier"] = await _case_luck(session, case["id"])
-        result.append(item)
-    return result
+    return CASES
 
 
 class CaseOpenRequest(BaseModel):
@@ -220,9 +215,6 @@ async def open_case(
         "balance_stars": user.balance_stars,
         "balance_ton": stars_to_ton(user.balance_stars),
         "inventory_added": True,
-        "luck_multiplier": round(luck, 2),
-        "case_luck": round(case_luck, 2),
-        "user_luck": round(user_luck, 2),
     }
 
 

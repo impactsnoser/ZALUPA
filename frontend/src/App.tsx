@@ -58,7 +58,6 @@ export default function App() {
   const [starsPerTon, setStarsPerTon] = useState(100);
   const [tonEnabled, setTonEnabled] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [luck, setLuck] = useState(1);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [toast, setToast] = useState("");
 
@@ -78,7 +77,6 @@ export default function App() {
     setStarsPerTon(wallet.stars_per_ton);
     setTonEnabled(wallet.ton_deposit_enabled);
     setIsAdmin(Boolean(wallet.is_admin));
-    setLuck(wallet.luck_multiplier ?? 1);
     // История тоже живёт на сервере: после перезагрузки она не пропадёт.
     setTransactions(
       wallet.transactions.map((t) => ({
@@ -231,7 +229,6 @@ export default function App() {
             telegramId={getTelegramId()}
             games={played}
             isAdmin={isAdmin}
-            luck={luck}
             onDeposit={() => setDepositOpen(true)}
             onAdmin={() => setAdminOpen(true)}
             onSold={handleSold}
@@ -274,7 +271,6 @@ export default function App() {
           caseId={caseId}
           telegramId={getTelegramId()}
           balance={balance}
-          luck={luck}
           onClose={() => setCaseId(null)}
           onDeposit={() => (setCaseId(null), setDepositOpen(true))}
           onCredited={refreshWallet}

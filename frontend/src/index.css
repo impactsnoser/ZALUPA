@@ -389,13 +389,6 @@ small { font-size: 12px; }
 .btn.outline:hover { background: var(--felt-3); }
 
 /* ============ Админ-панель ============ */
-.luck-badge {
-  display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px;
-  background: rgba(95, 224, 162, 0.16); color: var(--good);
-  font-size: 11px; font-weight: 700; vertical-align: middle;
-}
-.case-screen-title .luck-badge { font-size: 11px; letter-spacing: 0; }
-
 .admin-block { display: grid; gap: 10px; margin-top: 20px; }
 .admin-title { font: 700 16px var(--font-display); }
 .admin-search { display: flex; gap: 8px; }
@@ -406,6 +399,8 @@ small { font-size: 12px; }
 }
 .admin-input:focus { border-color: var(--foil); }
 .admin-input::placeholder { color: var(--snow-dim); }
+.admin-input.small { width: 104px; height: 34px; padding: 0 10px; border-radius: 10px; font-size: 14px; }
+.admin-balance { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .admin-users { display: grid; gap: 10px; }
 .admin-user, .admin-case {
   display: grid; gap: 9px; padding: 13px; border-radius: 16px;

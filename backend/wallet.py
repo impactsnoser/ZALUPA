@@ -286,7 +286,6 @@ async def get_wallet(
         "ton_deposit_enabled": bool(TON_DEPOSIT_ADDRESS),
         "ton_address": TON_DEPOSIT_ADDRESS or None,
         "is_admin": bool(user.is_admin or user.telegram_id in ADMIN_IDS),
-        "luck_multiplier": round(float(user.luck_multiplier or 1.0), 2),
         "transactions": [_tx_dict(tx) for tx in transactions],
     }
 

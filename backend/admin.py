@@ -18,6 +18,7 @@ from config import ADMIN_IDS, MAX_LUCK
 from database import AppSetting, User, get_session
 from games import CASES
 from telegram_auth import get_init_data, verify_telegram_id
+from wallet import _add_transaction
 
 router = APIRouter(prefix="/api/admin")
 
@@ -163,6 +164,35 @@ async def set_user_luck(
     target = await _load_target(session, target_id)
 
     target.luck_multiplier = round(float(req.luck), 2)
+    await session.commit()
+    return {"ok": True, "user": _user_dict(target)}
+
+
+class BalanceRequest(BaseModel):
+    amount_stars: int = Field(ge=1, le=100_000_000)
+
+
+@router.post("/users/{target_id}/balance")
+async def add_user_balance(
+    target_id: int,
+    req: BalanceRequest,
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    """Начислить игроку звёзды на единый баланс (подарок, компенсация и т.п.)."""
+    admin = await _load_admin(session, telegram_id, init_data)
+    target = await _load_target(session, target_id)
+
+    target.balance_stars += req.amount_stars
+    _add_transaction(
+        session,
+        target,
+        amount=req.amount_stars,
+        kind="admin_credit",
+        label=f"Начисление администратором: {req.amount_stars} ⭐",
+        reference=f"admin:{admin.telegram_id}" if admin is not None else "admin:env",
+    )
     await session.commit()
     return {"ok": True, "user": _user_dict(target)}
 
