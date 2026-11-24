@@ -44,19 +44,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Gifts Mini App API", lifespan=lifespan)
 
-# Домен фронтенда можно задать через FRONTEND_ORIGIN (несколько — через запятую).
-# Пока переменная не задана, разрешаем всё, чтобы не сломать текущий деплой.
-_frontend_origins = [
-    origin.strip()
-    for origin in os.getenv("FRONTEND_ORIGIN", "").split(",")
-    if origin.strip()
-]
+# Mini App может открываться из Telegram Web, native WebView, или прямого домена.
+# CORS не является авторизацией: изменения баланса и игры отдельно проверяют initData.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_frontend_origins or ["*"],
-    # Telegram Mini Apps may send their own Web origin on some clients rather
-    # than the Railway origin of the embedded frontend.
-    allow_origin_regex=r"^(null|https://([a-z0-9-]+\.)*(telegram\.org|t\.me|telegram\.me))$",
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

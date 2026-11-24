@@ -277,7 +277,6 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
         // Подпись Telegram: бэкенд проверяет её и не доверяет telegram_id из тела
         ...(tg?.initData ? { "X-Telegram-Init-Data": tg.initData } : {}),
-        "ngrok-skip-browser-warning": "1",
         ...(init?.headers as Record<string, string> | undefined),
       },
       signal: init?.signal ?? controller.signal,
