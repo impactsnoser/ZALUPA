@@ -15,6 +15,7 @@ import UpgradeGame from "./games/UpgradeGame";
 import RocketGame from "./games/RocketGame";
 import MinesGame from "./games/MinesGame";
 import SnowfallGame from "./games/SnowfallGame";
+import CaseBattleGame from "./games/CaseBattleGame";
 
 type Tab = "cases" | "games" | "friends" | "profile";
 
@@ -306,6 +307,14 @@ export default function App() {
                 onBalance={(stars, ton) => { setBalanceStars(stars); setBalance(ton); }}
                 onChanged={refreshWallet}
                 onDeposit={() => setDepositOpen(true)}
+              />
+            )}
+            {game === "Битва кейсов" && (
+              <CaseBattleGame
+                telegramId={getTelegramId()}
+                starsPerTon={starsPerTon}
+                onDeposit={() => setDepositOpen(true)}
+                onChanged={refreshWallet}
               />
             )}
           </div>

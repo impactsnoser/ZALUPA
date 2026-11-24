@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import MAX_LUCK, SELL_COEF, STARS_PER_TON
 from database import (
     AppSetting,
+    CaseBattle,
     Gift,
     InventoryItem,
     MinesSession,
@@ -187,6 +188,275 @@ async def open_case(
         "inventory_added": True,
         "inventory_id": inventory_item.id,
     }
+
+
+# ------------------------------------------------------ битвы кейсов 1v1
+
+def _battle_prize_item(user_id: int, prize: dict) -> InventoryItem:
+    return InventoryItem(
+        user_id=user_id,
+        prize_name=prize["name"],
+        prize_value_stars=_ton_to_stars(prize["value"]),
+        prize_image_url=f"/prizes/{prize['image']}",
+    )
+
+
+def _battle_card(case: dict) -> dict:
+    return {"id": case["id"], "title": case["title"], "price": case["price"]}
+
+
+async def _battle_view(session: AsyncSession, battle: CaseBattle, viewer_id: int) -> dict:
+    owner = await session.get(User, battle.creator_id)
+    opponent = await session.get(User, battle.opponent_id) if battle.opponent_id else None
+    case = _case(battle.case_id)
+    result = None
+    if battle.status == "completed":
+        creator_item = await session.get(InventoryItem, battle.creator_inventory_id)
+        opponent_item = await session.get(InventoryItem, battle.opponent_inventory_id)
+
+        def prize_view(item: InventoryItem | None) -> dict | None:
+            if item is None:
+                return None
+            return {
+                "name": item.prize_name or "Подарок",
+                "value_stars": item.prize_value_stars or 0,
+                "image_url": item.prize_image_url,
+            }
+
+        mine_is_creator = viewer_id == battle.creator_id
+        result = {
+            "you": prize_view(creator_item if mine_is_creator else opponent_item),
+            "opponent": prize_view(opponent_item if mine_is_creator else creator_item),
+            "won": battle.winner_id == viewer_id,
+            "draw": battle.winner_id is None,
+            "winner_username": (owner if battle.winner_id == battle.creator_id else opponent).username
+            if battle.winner_id is not None else None,
+            "you_receive_both": battle.winner_id == viewer_id,
+        }
+    user = await session.scalar(select(User).where(User.telegram_id == viewer_id))
+    return {
+        "battle_id": battle.id,
+        "status": battle.status,
+        "case": _battle_card(case),
+        "bet_stars": battle.bet_stars,
+        "bet_ton": stars_to_ton(battle.bet_stars),
+        "creator_username": owner.username if owner and owner.username else "Игрок",
+        "opponent_username": opponent.username if opponent and opponent.username else None,
+        "expires_at": battle.expires_at,
+        "result": result,
+        "balance_stars": user.balance_stars if user else 0,
+        "balance_ton": stars_to_ton(user.balance_stars) if user else 0,
+    }
+
+
+class BattleCreateRequest(BaseModel):
+    telegram_id: int
+    case_id: str = Field(min_length=1, max_length=64)
+
+
+class BattleJoinRequest(BaseModel):
+    telegram_id: int
+
+
+@router.get("/battles/cases")
+async def battle_cases():
+    return [_battle_card(case) for case in CASES]
+
+
+@router.get("/battles/lobby")
+async def battle_lobby(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(telegram_id, init_data)
+    now = int(datetime.now(timezone.utc).timestamp())
+    rooms = (await session.scalars(
+        select(CaseBattle).where(
+            CaseBattle.status == "waiting",
+            CaseBattle.creator_id != (await _user_by_telegram_id(session, telegram_id)).id,
+            CaseBattle.expires_at > now,
+        ).order_by(CaseBattle.created_at.desc()).limit(30)
+    )).all()
+    result = []
+    for room in rooms:
+        owner = await session.get(User, room.creator_id)
+        result.append({
+            "battle_id": room.id,
+            "username": owner.username if owner and owner.username else "Игрок",
+            "case": _battle_card(_case(room.case_id)),
+            "bet_stars": room.bet_stars,
+            "bet_ton": stars_to_ton(room.bet_stars),
+            "expires_at": room.expires_at,
+        })
+    return {"rooms": result}
+
+
+@router.get("/battles/mine")
+async def my_battle(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(telegram_id, init_data)
+    user = await _user_by_telegram_id(session, telegram_id)
+    room = await session.scalar(
+        select(CaseBattle).where(
+            CaseBattle.creator_id == user.id,
+            CaseBattle.status == "waiting",
+        ).order_by(CaseBattle.created_at.desc())
+    )
+    if room is None:
+        return {"battle": None}
+    return {"battle": await _battle_view(session, room, telegram_id)}
+
+
+@router.post("/battles")
+async def create_battle(
+    req: BattleCreateRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(req.telegram_id, init_data)
+    case = _case(req.case_id)
+    bet_stars = _ton_to_stars(case["price"])
+    async with session.begin():
+        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        pending = await session.scalar(select(CaseBattle).where(
+            CaseBattle.creator_id == user.id, CaseBattle.status == "waiting"
+        ).with_for_update())
+        if pending is not None:
+            now = int(datetime.now(timezone.utc).timestamp())
+            if pending.expires_at > now:
+                raise HTTPException(status_code=409, detail="У тебя уже есть открытая комната")
+            user.balance_stars += pending.bet_stars
+            _add_transaction(session, user, amount=pending.bet_stars, kind="case_battle_refund", label="Возврат за незапущенную битву", reference=f"battle:{pending.id}")
+            pending.status = "expired"
+        if user.balance_stars < bet_stars:
+            raise HTTPException(status_code=400, detail="Недостаточно средств")
+        user.balance_stars -= bet_stars
+        _add_transaction(session, user, amount=-bet_stars, kind="case_battle_bet", label=f"Битва кейсов «{case['title']}»")
+        battle = CaseBattle(
+            id=secrets.token_hex(6), creator_id=user.id, case_id=case["id"],
+            bet_stars=bet_stars, status="waiting",
+            expires_at=int(datetime.now(timezone.utc).timestamp()) + 180,
+        )
+        session.add(battle)
+        await session.flush()
+        view = await _battle_view(session, battle, req.telegram_id)
+    return view
+
+
+@router.post("/battles/{battle_id}/join")
+async def join_battle(
+    battle_id: str,
+    req: BattleJoinRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(req.telegram_id, init_data)
+    async with session.begin():
+        battle = await session.scalar(select(CaseBattle).where(CaseBattle.id == battle_id).with_for_update())
+        if battle is None:
+            raise HTTPException(status_code=404, detail="Комната не найдена")
+        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        if battle.status != "waiting":
+            raise HTTPException(status_code=409, detail="Комната уже занята или закрыта")
+        if battle.creator_id == user.id:
+            raise HTTPException(status_code=400, detail="Нельзя присоединиться к своей комнате")
+        if battle.expires_at <= int(datetime.now(timezone.utc).timestamp()):
+            owner = await session.scalar(select(User).where(User.id == battle.creator_id).with_for_update())
+            if owner:
+                owner.balance_stars += battle.bet_stars
+                _add_transaction(session, owner, amount=battle.bet_stars, kind="case_battle_refund", label="Возврат за незапущенную битву", reference=f"battle:{battle.id}")
+            battle.status = "expired"
+            view = await _battle_view(session, battle, req.telegram_id)
+        else:
+            owner = await session.scalar(select(User).where(User.id == battle.creator_id).with_for_update())
+            if owner is None:
+                raise HTTPException(status_code=404, detail="Создатель комнаты не найден")
+            if user.balance_stars < battle.bet_stars:
+                raise HTTPException(status_code=400, detail="Недостаточно средств")
+            user.balance_stars -= battle.bet_stars
+            _add_transaction(session, user, amount=-battle.bet_stars, kind="case_battle_bet", label=f"Битва кейсов «{_case(battle.case_id)['title']}»")
+
+            case = _case(battle.case_id)
+            case_luck = await _case_luck(session, case["id"])
+            creator_luck = min(MAX_LUCK, case_luck * max(1.0, min(MAX_LUCK, float(owner.luck_multiplier or 1.0))))
+            opponent_luck = min(MAX_LUCK, case_luck * max(1.0, min(MAX_LUCK, float(user.luck_multiplier or 1.0))))
+            creator_prize = _draw_prize(case, creator_luck)
+            opponent_prize = _draw_prize(case, opponent_luck)
+            creator_item = _battle_prize_item(owner.id, creator_prize)
+            opponent_item = _battle_prize_item(user.id, opponent_prize)
+            session.add_all([creator_item, opponent_item])
+            await session.flush()
+            creator_value = creator_item.prize_value_stars or 0
+            opponent_value = opponent_item.prize_value_stars or 0
+            if creator_value == opponent_value:
+                winner_id = None
+            elif creator_value > opponent_value:
+                winner_id = owner.id
+                opponent_item.user_id = owner.id
+            else:
+                winner_id = user.id
+                creator_item.user_id = user.id
+            battle.opponent_id = user.id
+            battle.winner_id = winner_id
+            battle.creator_inventory_id = creator_item.id
+            battle.opponent_inventory_id = opponent_item.id
+            battle.status = "completed"
+            battle.finished_at = datetime.now(timezone.utc)
+            _add_transaction(session, owner, amount=0, kind="case_battle_result", label="Битва кейсов: победа" if winner_id == owner.id else ("Битва кейсов: ничья" if winner_id is None else "Битва кейсов"), reference=f"battle:{battle.id}")
+            _add_transaction(session, user, amount=0, kind="case_battle_result", label="Битва кейсов: победа" if winner_id == user.id else ("Битва кейсов: ничья" if winner_id is None else "Битва кейсов"), reference=f"battle:{battle.id}")
+            view = await _battle_view(session, battle, req.telegram_id)
+    return view
+
+
+@router.get("/battles/{battle_id}")
+async def get_battle(
+    battle_id: str,
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(telegram_id, init_data)
+    async with session.begin():
+        battle = await session.scalar(select(CaseBattle).where(CaseBattle.id == battle_id).with_for_update())
+        if battle is None:
+            raise HTTPException(status_code=404, detail="Комната не найдена")
+        user = await _user_by_telegram_id(session, telegram_id)
+        if user.id not in (battle.creator_id, battle.opponent_id):
+            raise HTTPException(status_code=403, detail="Это не твоя битва")
+        if battle.status == "waiting" and battle.expires_at <= int(datetime.now(timezone.utc).timestamp()):
+            owner = await session.scalar(select(User).where(User.id == battle.creator_id).with_for_update())
+            if owner:
+                owner.balance_stars += battle.bet_stars
+                _add_transaction(session, owner, amount=battle.bet_stars, kind="case_battle_refund", label="Возврат за незапущенную битву", reference=f"battle:{battle.id}")
+            battle.status = "expired"
+        view = await _battle_view(session, battle, telegram_id)
+    return view
+
+
+@router.post("/battles/{battle_id}/cancel")
+async def cancel_battle(
+    battle_id: str,
+    req: BattleJoinRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    verify_telegram_id(req.telegram_id, init_data)
+    async with session.begin():
+        battle = await session.scalar(select(CaseBattle).where(CaseBattle.id == battle_id).with_for_update())
+        if battle is None:
+            raise HTTPException(status_code=404, detail="Комната не найдена")
+        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        if battle.creator_id != user.id or battle.status != "waiting":
+            raise HTTPException(status_code=409, detail="Эту битву нельзя отменить")
+        user.balance_stars += battle.bet_stars
+        _add_transaction(session, user, amount=battle.bet_stars, kind="case_battle_refund", label="Возврат за отменённую битву", reference=f"battle:{battle.id}")
+        battle.status = "cancelled"
+        view = await _battle_view(session, battle, req.telegram_id)
+    return view
 
 
 # ---------------------------------------------------------------- мины

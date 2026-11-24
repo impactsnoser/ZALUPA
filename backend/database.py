@@ -309,6 +309,25 @@ class SnowfallSession(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class CaseBattle(Base):
+    """1v1 case battle. Both drops and winner are resolved atomically on server."""
+
+    __tablename__ = "case_battles"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    opponent_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True)
+    case_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    bet_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="waiting")
+    winner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    creator_inventory_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    opponent_inventory_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expires_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 SEED_GIFTS = [
     # name, price_stars, image_url, is_nft
     ("Мишка", 15, "https://example.com/img/bear.png", False),

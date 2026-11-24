@@ -201,6 +201,28 @@ export interface StarterResult {
   is_nft: boolean;
 }
 
+export interface BattleCase { id: string; title: string; price: number }
+export interface BattleRoom {
+  battle_id: string;
+  status: "waiting" | "completed" | "expired" | "cancelled";
+  case: BattleCase;
+  bet_stars: number;
+  bet_ton: number;
+  creator_username: string;
+  opponent_username: string | null;
+  expires_at: number;
+  result: {
+    you: { name: string; value_stars: number; image_url: string | null } | null;
+    opponent: { name: string; value_stars: number; image_url: string | null } | null;
+    won: boolean;
+    draw: boolean;
+    winner_username: string | null;
+    you_receive_both: boolean;
+  } | null;
+  balance_stars: number;
+  balance_ton: number;
+}
+
 async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_URL}${path}`;
   const controller = new AbortController();
@@ -287,6 +309,13 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getUser: (telegramId: number) => request<UserProfile>(`/api/user/${telegramId}`),
+  getBattleCases: () => request<BattleCase[]>("/api/battles/cases"),
+  getBattleLobby: (telegramId: number) => request<{ rooms: { battle_id: string; username: string; case: BattleCase; bet_stars: number; bet_ton: number; expires_at: number }[] }>(`/api/battles/lobby?telegram_id=${telegramId}`),
+  getMyBattle: (telegramId: number) => request<{ battle: BattleRoom | null }>(`/api/battles/mine?telegram_id=${telegramId}`),
+  getBattle: (battleId: string, telegramId: number) => request<BattleRoom>(`/api/battles/${encodeURIComponent(battleId)}?telegram_id=${telegramId}`),
+  createBattle: (telegramId: number, caseId: string) => request<BattleRoom>("/api/battles", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, case_id: caseId }) }),
+  joinBattle: (telegramId: number, battleId: string) => request<BattleRoom>(`/api/battles/${encodeURIComponent(battleId)}/join`, { method: "POST", body: JSON.stringify({ telegram_id: telegramId }) }),
+  cancelBattle: (telegramId: number, battleId: string) => request<BattleRoom>(`/api/battles/${encodeURIComponent(battleId)}/cancel`, { method: "POST", body: JSON.stringify({ telegram_id: telegramId }) }),
   getGifts: () => request<Gift[]>("/api/gifts"),
   getWallet: (telegramId: number) => request<Wallet>(`/api/wallet/${telegramId}`),
   register: (telegramId: number, username: string | null) =>

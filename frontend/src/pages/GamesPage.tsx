@@ -26,6 +26,7 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M16 3v26M5 9l22 14M5 23 27 9M12 6l4-3 4 3M12 26l4 3 4-3M6 13 5 9l4-1M23 24l4-1-1-4M6 19l-1 4 4 1M23 8l4 1-1 4" />
     </svg>
   ),
+  battle: <span aria-hidden="true">⚔️</span>,
 };
 
 const GAMES = [
@@ -33,6 +34,7 @@ const GAMES = [
   { id: "Ракетка", icon: "rocket", tone: "red", text: "Забери выигрыш до того, как она улетит" },
   { id: "Мины", icon: "mines", tone: "ice", text: "Открывай клетки и обходи мины" },
   { id: "Ледяная шахта", icon: "snowfall", tone: "ice", text: "Разбивай ледяные блоки и открывай сундуки" },
+  { id: "Битва кейсов", icon: "battle", tone: "gold", text: "Открой кейс одновременно с другим игроком" },
 ];
 
 export default function GamesPage({ onPlay }: { onPlay: (game: string) => void }) {
@@ -50,13 +52,6 @@ export default function GamesPage({ onPlay }: { onPlay: (game: string) => void }
             <Glyph name="chevron" size={16} />
           </button>
         ))}
-        <div className="menu-row big muted-row" aria-disabled="true">
-          <span className="menu-ico tone-dim">⚔</span>
-          <span className="menu-text">
-            <b>Баттлы</b>
-            <small>Кейсы наперегонки с другим игроком. Скоро.</small>
-          </span>
-        </div>
       </div>
     </section>
   );
