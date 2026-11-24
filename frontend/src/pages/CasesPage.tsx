@@ -2,7 +2,7 @@ import { useMemo, type CSSProperties } from "react";
 import { CASES } from "../data/cases";
 import { makeLiveDrops } from "../data/mock";
 import { fmt } from "../lib/format";
-import GiftBox, { PALETTES } from "../ui/GiftBox";
+import { PALETTES } from "../ui/GiftBox";
 import { Ton } from "../ui/Icons";
 
 function LiveTicker() {
@@ -36,24 +36,30 @@ export default function CasesPage({ onOpen }: { onOpen: (caseId: string) => void
       <div className="case-grid">
         {CASES.map((c) => {
           const pal = PALETTES[c.box] ?? PALETTES.ice;
-          const max = Math.max(...c.prizes.map((p) => p.value));
+          const featured = [...c.prizes]
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 3);
           return (
             <button
               key={c.id}
               className="case-card"
               style={{ "--glow": pal.glow } as CSSProperties}
               onClick={() => onOpen(c.id)}
+              aria-label={`${c.title}, цена ${fmt(c.price)} TON`}
             >
-              <span className="case-stage">
-                <GiftBox palette={pal} />
-              </span>
               <span className="case-name">{c.title}</span>
+              <span className="case-highlights" aria-hidden="true">
+                {featured.map((prize, index) => (
+                  <span className={`case-highlight case-highlight-${index + 1}`} key={prize.id}>
+                    <img src={`/prizes/${prize.image}`} alt="" loading="lazy" draggable={false} />
+                  </span>
+                ))}
+              </span>
               <span className="case-meta">
                 <span className="price-tag">
                   <Ton size={15} />
                   {fmt(c.price)}
                 </span>
-                <small>до {Math.floor(max)}</small>
               </span>
             </button>
           );
