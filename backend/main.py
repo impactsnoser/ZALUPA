@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import SELL_COEF, STARS_PER_TON, WELCOME_STARS
+from deploy_services import router as deploy_router
 from database import (
     Gift,
     InventoryItem,
@@ -59,6 +60,7 @@ app.add_middleware(
 app.include_router(wallet_router)
 app.include_router(games_router)
 app.include_router(admin_router)
+app.include_router(deploy_router)
 
 
 class UpgradeRequest(BaseModel):
