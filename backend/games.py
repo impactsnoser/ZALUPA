@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import MAX_LUCK, STARS_PER_TON
+from config import MAX_LUCK, SELL_COEF, STARS_PER_TON
 from database import (
     AppSetting,
     Gift,
@@ -163,15 +163,15 @@ async def open_case(
         prize = _draw_prize(case, luck)
         prize_stars = _ton_to_stars(prize["value"])
         # Приз именуем как в каталоге: запасной emoji не нужен, есть картинка.
-        session.add(
-            InventoryItem(
+        inventory_item = InventoryItem(
                 user_id=user.id,
                 prize_name=prize["name"],
                 prize_value_stars=prize_stars,
                 prize_image_url=f"/prizes/{prize['image']}",
                 prize_emoji=None,
             )
-        )
+        session.add(inventory_item)
+        await session.flush()
 
     return {
         "case_id": case["id"],
@@ -180,10 +180,12 @@ async def open_case(
         "bet_stars": bet_stars,
         "bet_ton": stars_to_ton(bet_stars),
         "prize_stars": prize_stars,
+        "sell_value_stars": max(1, int(round(prize_stars * SELL_COEF))),
         "prize_ton": stars_to_ton(prize_stars),
         "balance_stars": user.balance_stars,
         "balance_ton": stars_to_ton(user.balance_stars),
         "inventory_added": True,
+        "inventory_id": inventory_item.id,
     }
 
 

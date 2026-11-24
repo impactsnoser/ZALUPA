@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import telegram_bot
@@ -277,6 +277,12 @@ async def get_wallet(
             .limit(25)
         )
     ).all()
+    activity_count = await session.scalar(
+        select(func.count(WalletTransaction.id)).where(
+            WalletTransaction.user_id == user.id,
+            WalletTransaction.amount < 0,
+        )
+    )
 
     return {
         "telegram_id": user.telegram_id,
@@ -286,6 +292,7 @@ async def get_wallet(
         "ton_deposit_enabled": bool(TON_DEPOSIT_ADDRESS),
         "ton_address": TON_DEPOSIT_ADDRESS or None,
         "is_admin": bool(user.is_admin or user.telegram_id in ADMIN_IDS),
+        "activity_count": int(activity_count or 0),
         "transactions": [_tx_dict(tx) for tx in transactions],
     }
 

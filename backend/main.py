@@ -273,6 +273,10 @@ class SellItemRequest(BaseModel):
     inventory_id: int
 
 
+class SellAllRequest(BaseModel):
+    telegram_id: int
+
+
 @app.get("/api/inventory/{telegram_id}")
 async def get_inventory(
     telegram_id: int,
@@ -341,6 +345,54 @@ async def sell_inventory_item(
     return {
         "sold_stars": sell_stars,
         "sold_ton": stars_to_ton(sell_stars),
+        "balance_stars": user.balance_stars,
+        "balance_ton": stars_to_ton(user.balance_stars),
+    }
+
+
+@app.post("/api/inventory/sell-all")
+async def sell_all_inventory(
+    req: SellAllRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    """Продать весь инвентарь одной атомарной операцией."""
+    verify_telegram_id(req.telegram_id, init_data)
+
+    async with session.begin():
+        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        items = (
+            await session.scalars(
+                select(InventoryItem)
+                .options(selectinload(InventoryItem.gift))
+                .where(InventoryItem.user_id == user.id)
+                .with_for_update()
+            )
+        ).all()
+        if not items:
+            raise HTTPException(status_code=400, detail="Инвентарь уже пуст")
+
+        sold_stars = 0
+        for item in items:
+            value = item.gift.price_stars if item.gift is not None else (item.prize_value_stars or 0)
+            sold_stars += max(1, int(round(value * SELL_COEF)))
+
+        await session.execute(
+            delete(InventoryItem).where(InventoryItem.user_id == user.id)
+        )
+        user.balance_stars += sold_stars
+        _add_transaction(
+            session,
+            user,
+            amount=sold_stars,
+            kind="inventory_sell",
+            label=f"Продажа всего инвентаря ({len(items)} предметов)",
+        )
+
+    return {
+        "sold_count": len(items),
+        "sold_stars": sold_stars,
+        "sold_ton": stars_to_ton(sold_stars),
         "balance_stars": user.balance_stars,
         "balance_ton": stars_to_ton(user.balance_stars),
     }

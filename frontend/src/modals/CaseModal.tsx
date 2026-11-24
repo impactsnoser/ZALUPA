@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
+import type { SellResult } from "../api";
 import { chanceOf, getCase, paybackChance, rtpOf, type Prize } from "../data/cases";
 import { fmt, fmtChance, rarityOf } from "../lib/format";
 import { tg } from "../telegram";
@@ -37,6 +38,8 @@ type OpenCaseResponse = {
   prize: Prize;
   bet_stars: number;
   prize_stars: number;
+  sell_value_stars: number;
+  inventory_id: number;
   balance_stars: number;
   balance_ton: number;
 };
@@ -84,6 +87,11 @@ export default function CaseModal({
   // Мульти-открытие: до 5 кейсов за раз.
   const [qty, setQty] = useState(1);
   const [bulk, setBulk] = useState<Prize[]>([]);
+  const [openedInventoryId, setOpenedInventoryId] = useState<number | null>(null);
+  const [sellValueStars, setSellValueStars] = useState(0);
+  const [soldStars, setSoldStars] = useState<number | null>(null);
+  const [prizeAction, setPrizeAction] = useState<"pending" | "kept" | "sold">("pending");
+  const [sellPrizeBusy, setSellPrizeBusy] = useState(false);
 
   const centerOffset = (i: number) => i * STEP + ITEM_H / 2 - (viewport.current?.clientHeight ?? 280) / 2;
 
@@ -121,6 +129,9 @@ export default function CaseModal({
     setError(null);
     setBusy(true);
     setBulk([]);
+    setOpenedInventoryId(null);
+    setSoldStars(null);
+    setPrizeAction("pending");
 
     // Результат считает сервер: он же списывает ставку и кладёт предмет
     // в инвентарь. Клиент не может подделать приз через консоль.
@@ -134,6 +145,8 @@ export default function CaseModal({
     }
 
     const won = result.prize;
+    setOpenedInventoryId(result.inventory_id);
+    setSellValueStars(result.sell_value_stars);
     const next = Array.from({ length: REEL_LEN }, (_, i) =>
       i === WIN_AT ? won : sorted[Math.floor(Math.random() * sorted.length)],
     );
@@ -209,6 +222,22 @@ export default function CaseModal({
   function handleBuy() {
     if (qty > 1) void openMany();
     else void open();
+  }
+
+  async function sellOpenedPrize() {
+    if (openedInventoryId === null || sellPrizeBusy) return;
+    setSellPrizeBusy(true);
+    setError(null);
+    try {
+      const result: SellResult = await api.sellInventoryItem(telegramId, openedInventoryId);
+      setSoldStars(result.sold_stars);
+      setPrizeAction("sold");
+      void onCredited();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось продать подарок");
+    } finally {
+      setSellPrizeBusy(false);
+    }
   }
 
   const spinning = phase === "spinning";
@@ -309,7 +338,11 @@ export default function CaseModal({
               {fmt(Math.abs(diff))}
             </span>
             <small>
-              ≈ {prizeStars} ⭐. Предмет добавлен в инвентарь — продать или вывести его можно в профиле.
+              {prizeAction === "sold"
+                ? `Продано за ${soldStars ?? sellValueStars} ⭐. Баланс обновлён.`
+                : prizeAction === "kept"
+                  ? `≈ ${prizeStars} ⭐. Подарок оставлен в инвентаре.`
+                  : `≈ ${prizeStars} ⭐. Выбери: оставить подарок или продать сразу.`}
             </small>
           </>
         ) : (
@@ -318,6 +351,17 @@ export default function CaseModal({
           </span>
         )}
       </div>
+
+      {prize && openedInventoryId !== null && prizeAction === "pending" && (
+        <div className="case-prize-actions">
+          <button className="case-prize-action keep" onClick={() => setPrizeAction("kept")} disabled={sellPrizeBusy}>
+            Оставить в инвентаре
+          </button>
+          <button className="case-prize-action sell" onClick={sellOpenedPrize} disabled={sellPrizeBusy}>
+            {sellPrizeBusy ? "Продаём…" : `Продать за ${fmt(sellValueStars)} ⭐`}
+          </button>
+        </div>
+      )}
 
       <div className="case-qty" role="group" aria-label="Сколько кейсов открыть за раз">
         <span>За раз</span>

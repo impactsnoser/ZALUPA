@@ -506,6 +506,10 @@ audio#secret-track { display: none; }
 .inventory-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .inventory-actions .btn { min-width: 60px; font-size: 11px; padding: 0 8px; }
 .inventory-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.inventory-section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:14px 0 8px; }
+.inventory-section-head .menu-section-title { margin:0; }
+.inventory-sell-all { padding:8px 12px; border:1px solid rgba(255,91,109,.32); border-radius:999px; background:rgba(194,20,44,.2); color:#ffb0ba; font-size:12px; font-weight:800; white-space:nowrap; }
+.inventory-sell-all:disabled { opacity:.55; }
 .inventory-card { min-width: 0; display: flex; flex-direction: column; overflow: hidden; padding: 8px; border: 1px solid rgba(143, 227, 255, .2); border-radius: 20px; background: linear-gradient(155deg, rgba(28, 74, 65, .92), rgba(10, 31, 27, .98)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); }
 .inventory-card.case-prize { border-color: color-mix(in srgb, var(--rc) 34%, transparent); }
 .inventory-card-art { position: relative; display: grid; place-items: center; height: 116px; overflow: hidden; border-radius: 15px; background: radial-gradient(70% 70% at 50% 50%, rgba(95, 224, 162, .14), transparent 72%), rgba(0, 0, 0, .18); }
@@ -551,6 +555,11 @@ audio#secret-track { display: none; }
 .showcase-arrow.left { left: 12px; }.showcase-arrow.right { right: 12px; }
 .case-screen .drop-result { min-height: 24px; margin: 0 auto 12px; text-align: center; color: var(--snow-dim); font-size: 13px; }
 .case-screen .drop-result strong { color: #f4f5f6; }
+.case-prize-actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; width:min(100%,440px); margin:0 auto 12px; }
+.case-prize-action { min-height:48px; padding:8px 10px; border-radius:14px; text-align:center; font-size:13px; font-weight:800; }
+.case-prize-action.keep { background:var(--felt-3); border:1px solid var(--line); color:var(--snow); }
+.case-prize-action.sell { background:linear-gradient(180deg,#f2495d,var(--ribbon-2)); color:#fff; box-shadow:inset 0 1px 0 rgba(255,255,255,.2); }
+.case-prize-action:disabled { opacity:.58; }
 .case-buy { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; max-width: 440px; min-height: 56px; margin: 0 auto; border-radius: 16px; background: linear-gradient(180deg, #ffd27a, var(--foil)); color: #2b1a00; font-size: 16px; font-weight: 700; box-shadow: 0 8px 22px -10px rgba(242, 184, 75, .65), inset 0 1px 0 rgba(255, 255, 255, .35); }
 .case-buy svg { flex: none; }.case-buy:disabled { opacity: .65; }
 .case-qty { display: flex; align-items: center; justify-content: center; gap: 6px; max-width: 440px; margin: 0 auto 10px; }

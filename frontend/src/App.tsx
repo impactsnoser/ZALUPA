@@ -59,6 +59,7 @@ export default function App() {
   const [starsPerTon, setStarsPerTon] = useState(100);
   const [tonEnabled, setTonEnabled] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [activityCount, setActivityCount] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [toast, setToast] = useState("");
   const [musicPlaying, setMusicPlaying] = useState(false);
@@ -67,7 +68,7 @@ export default function App() {
   const name = tgUser?.first_name ?? tgUser?.username ?? "Игрок";
   const handle = tgUser?.username ? `@${tgUser.username}` : "в браузере";
   const initial = name.slice(0, 1).toUpperCase();
-  const played = transactions.filter((t) => t.amount < 0).length;
+  const played = activityCount;
   const level = 1 + Math.floor(played / 5);
   const levelProgress = ((played % 5) / 5) * 100;
 
@@ -79,6 +80,7 @@ export default function App() {
     setStarsPerTon(wallet.stars_per_ton);
     setTonEnabled(wallet.ton_deposit_enabled);
     setIsAdmin(Boolean(wallet.is_admin));
+    setActivityCount(wallet.activity_count ?? wallet.transactions.filter((t) => t.amount_stars < 0).length);
     // История тоже живёт на сервере: после перезагрузки она не пропадёт.
     setTransactions(
       wallet.transactions.map((t) => ({
@@ -137,6 +139,7 @@ export default function App() {
     const amountStars = Math.max(1, Math.round(amount * starsPerTon));
     setBalance((b) => Math.max(0, b - amount));
     setBalanceStars((s) => Math.max(0, s - amountStars));
+    setActivityCount((count) => count + 1);
     log(label, -amount);
     api
       .spend(getTelegramId(), amountStars, label)

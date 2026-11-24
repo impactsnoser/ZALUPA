@@ -85,6 +85,7 @@ export interface Wallet {
   ton_deposit_enabled: boolean;
   ton_address: string | null;
   is_admin?: boolean;
+  activity_count: number;
   transactions: WalletTransaction[];
 }
 
@@ -142,6 +143,10 @@ export interface SellResult {
   sold_ton: number;
   balance_stars: number;
   balance_ton: number;
+}
+
+export interface SellAllResult extends SellResult {
+  sold_count: number;
 }
 
 export interface WithdrawResult {
@@ -332,6 +337,8 @@ export const api = {
       prize: Prize;
       bet_stars: number;
       prize_stars: number;
+      sell_value_stars: number;
+      inventory_id: number;
       balance_stars: number;
       balance_ton: number;
     }>("/api/cases/open", {
@@ -356,6 +363,11 @@ export const api = {
     request<SellResult>("/api/inventory/sell-item", {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId, inventory_id: inventoryId }),
+    }),
+  sellAllInventory: (telegramId: number) =>
+    request<SellAllResult>("/api/inventory/sell-all", {
+      method: "POST",
+      body: JSON.stringify({ telegram_id: telegramId }),
     }),
   withdrawInventoryItem: (telegramId: number, inventoryId: number) =>
     request<WithdrawResult>("/api/inventory/withdraw-item", {

@@ -42,6 +42,7 @@ export default function ProfilePage({
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sellBusy, setSellBusy] = useState<Set<number>>(new Set());
+  const [sellAllBusy, setSellAllBusy] = useState(false);
   const [withdrawBusy, setWithdrawBusy] = useState<Set<number>>(new Set());
 
   const loadInventory = useCallback(async () => {
@@ -74,6 +75,21 @@ export default function ProfilePage({
         next.delete(item.inventory_id);
         return next;
       });
+    }
+  };
+
+  const handleSellAll = async () => {
+    if (sellAllBusy || inventory.length === 0) return;
+    if (!window.confirm(`Продать все ${inventory.length} предметов из инвентаря?`)) return;
+    setSellAllBusy(true);
+    try {
+      const result = await api.sellAllInventory(telegramId);
+      setInventory([]);
+      onSold(result);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Не удалось продать инвентарь");
+    } finally {
+      setSellAllBusy(false);
     }
   };
 
@@ -142,7 +158,14 @@ export default function ProfilePage({
         </div>
       </div>
       <div className="inventory-section">
-        <h3 className="menu-section-title">Инвентарь</h3>
+        <div className="inventory-section-head">
+          <h3 className="menu-section-title">Инвентарь</h3>
+          {inventory.length > 0 && (
+            <button className="inventory-sell-all" onClick={handleSellAll} disabled={sellAllBusy || sellBusy.size > 0 || withdrawBusy.size > 0}>
+              {sellAllBusy ? "Продаём…" : "Продать всё"}
+            </button>
+          )}
+        </div>
         {inventory.length === 0 ? (
           <p className="empty">Инвентарь пуст. Открой кейсы, чтобы получить предметы.</p>
         ) : (
