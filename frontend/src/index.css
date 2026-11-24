@@ -192,6 +192,12 @@ small { font-size: 12px; }
 .dock-item span { max-width: 0; overflow: hidden; opacity: 0; font-weight: 700; font-size: 14px; white-space: nowrap; transition: max-width 0.3s, opacity 0.2s; }
 .dock-item[aria-current="page"] { background: linear-gradient(180deg, #ff4f64, var(--ribbon-2)); color: #fff; gap: 8px; padding: 0 16px; box-shadow: 0 6px 18px -6px rgba(255, 59, 82, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.32); }
 .dock-item[aria-current="page"] span { max-width: 90px; opacity: 1; }
+.dock-music { display: grid; place-items: center; flex: none; width: 44px; height: 46px; margin-left: 2px; border-radius: 999px; color: var(--snow-dim); transition: color .2s, background .2s, box-shadow .2s; }
+.dock-music svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.dock-music.playing { color: #201500; background: linear-gradient(145deg, #ffe08c, var(--foil)); box-shadow: 0 0 18px rgba(247,193,74,.38); animation: music-pulse 1.4s ease-in-out infinite; }
+.dock-music:active { transform: scale(.94); }
+@keyframes music-pulse { 50% { box-shadow: 0 0 24px rgba(247,193,74,.58); } }
+audio#secret-track { display: none; }
 
 /* ============ Нижний лист ============ */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(2px); animation: fade 0.2s; }

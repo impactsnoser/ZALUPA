@@ -61,6 +61,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [toast, setToast] = useState("");
+  const [musicPlaying, setMusicPlaying] = useState(false);
 
   const tgUser = tg?.initDataUnsafe?.user;
   const name = tgUser?.first_name ?? tgUser?.username ?? "Игрок";
@@ -192,6 +193,22 @@ export default function App() {
   const closeGame = () => setGame(null);
   const gameProps = { balance, onSpend: spend, onWin: win, onDeposit: () => setDepositOpen(true) };
 
+  function toggleSecretMusic() {
+    const audio = document.getElementById("secret-track") as HTMLAudioElement | null;
+    if (!audio) return;
+    if (audio.paused) {
+      void audio.play().then(() => {
+        setMusicPlaying(true);
+        setToast("Голда на Голду 🎵");
+      }).catch(() => setToast("Не удалось включить музыку"));
+    } else {
+      audio.pause();
+      setMusicPlaying(false);
+      setToast("Музыка на паузе");
+    }
+    tg?.HapticFeedback?.impactOccurred("light");
+  }
+
   return (
     <div className="app">
       <div className="edge-glow" aria-hidden="true" />
@@ -246,7 +263,22 @@ export default function App() {
             <span>{t.label}</span>
           </button>
         ))}
+        <button
+          className={`dock-music${musicPlaying ? " playing" : ""}`}
+          onClick={toggleSecretMusic}
+          aria-label={musicPlaying ? "Поставить песню на паузу" : "Включить секретную песню"}
+          aria-pressed={musicPlaying}
+          title="🎵"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 18V5l12-2v13" />
+            <circle cx="6" cy="18" r="3" />
+            <circle cx="18" cy="16" r="3" />
+          </svg>
+        </button>
       </nav>
+
+      <audio id="secret-track" src="/golda-na-goldu.mp3" preload="none" onEnded={() => setMusicPlaying(false)} />
 
       {game && (
         <div className="play">
