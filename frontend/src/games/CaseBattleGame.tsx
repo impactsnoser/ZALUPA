@@ -4,19 +4,24 @@ import { fmt } from "../lib/format";
 import { Ton } from "../ui/Icons";
 
 type LobbyRoom = { battle_id: string; username: string; case: BattleCase; bet_stars: number; bet_ton: number; expires_at: number };
+type ReelItem = { name: string; valueStars: number; imageUrl: string };
 
-function reelItems(battleId: string, playerIndex: number, battleCase: BattleCase, result: NonNullable<BattleRoom["result"]>["you"]) {
-  const previews = battleCase.prizes ?? [];
+function reelItems(battleId: string, playerIndex: number, battleCase: BattleCase, result: NonNullable<BattleRoom["result"]>["you"], otherPrize: NonNullable<BattleRoom["result"]>["you"]) {
+  const previews: ReelItem[] = battleCase.prizes?.length
+    ? battleCase.prizes.map((item) => ({ name: item.name, valueStars: Math.round(item.value * 100), imageUrl: item.image_url }))
+    : [result, otherPrize].filter((item): item is NonNullable<typeof item> => Boolean(item)).map((item) => ({
+      name: item.name, valueStars: item.value_stars, imageUrl: item.image_url ?? "",
+    }));
   if (!result || previews.length === 0) return [];
   const seed = [...battleId].reduce((total, char) => total + char.charCodeAt(0), playerIndex * 29);
   const spins = Array.from({ length: 18 }, (_, index) => previews[(seed + index * 7) % previews.length]);
-  return [...spins, result];
+  return [...spins, { name: result.name, valueStars: result.value_stars, imageUrl: result.image_url ?? "" }];
 }
 
-function BattleReel({ battle, prize, playerIndex, label, duration }: {
-  battle: BattleRoom; prize: NonNullable<BattleRoom["result"]>["you"]; playerIndex: number; label: string; duration: number;
+function BattleReel({ battle, prize, otherPrize, playerIndex, label, duration }: {
+  battle: BattleRoom; prize: NonNullable<BattleRoom["result"]>["you"]; otherPrize: NonNullable<BattleRoom["result"]>["you"]; playerIndex: number; label: string; duration: number;
 }) {
-  const items = reelItems(battle.battle_id, playerIndex, battle.case, prize);
+  const items = reelItems(battle.battle_id, playerIndex, battle.case, prize, otherPrize);
   const reelStyle = {
     "--reel-end": `${-Math.max(0, items.length - 1) * 80}px`,
     "--reel-duration": `${Math.max(250, duration)}ms`,
@@ -28,9 +33,9 @@ function BattleReel({ battle, prize, playerIndex, label, duration }: {
         <div className="battle-reel-track" style={reelStyle}>
           {items.map((item, index) => (
             <div className="battle-reel-item" key={`${item.name}-${index}`}>
-              <img src={item.image_url ?? ""} alt="" />
+              <img src={item.imageUrl} alt="" />
               <span>{item.name}</span>
-              <small>{fmt("value_stars" in item ? item.value_stars : Math.round(item.value * 100))} ⭐</small>
+              <small>{fmt(item.valueStars / 100)} TON</small>
             </div>
           ))}
         </div>
@@ -49,6 +54,17 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [revealedBattleId, setRevealedBattleId] = useState<string | null>(null);
+  const [revealDeadline, setRevealDeadline] = useState(0);
+
+  function applyBattle(updated: BattleRoom) {
+    if (updated.status === "completed" && updated.result) {
+      const now = Date.now();
+      const serverDeadline = updated.reveal_at ?? 0;
+      setRevealDeadline(serverDeadline > now + 250 ? serverDeadline : now + 3200);
+      setRevealedBattleId(null);
+    }
+    setBattle(updated);
+  }
 
   const refreshLobby = useCallback(async () => {
     try {
@@ -83,7 +99,7 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
     if (!battle || battle.status !== "waiting") return;
     const timer = window.setInterval(() => {
       api.getBattle(battle.battle_id, telegramId).then((updated) => {
-        setBattle(updated);
+        applyBattle(updated);
         if (updated.status !== "waiting") onChanged();
       }).catch((err: unknown) => setError(err instanceof Error ? err.message : "Не удалось обновить битву"));
     }, 650);
@@ -91,19 +107,18 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
   }, [battle?.battle_id, battle?.status, telegramId, onChanged]);
 
   useEffect(() => {
-    if (!battle || battle.status !== "completed" || !battle.result) return;
-    setRevealedBattleId(null);
-    const delay = Math.max(0, (battle.reveal_at ?? Date.now()) - Date.now());
+    if (!battle || battle.status !== "completed" || !battle.result || revealedBattleId === battle.battle_id) return;
+    const delay = Math.max(0, (revealDeadline || Date.now() + 3200) - Date.now());
     const timer = window.setTimeout(() => setRevealedBattleId(battle.battle_id), delay);
     return () => window.clearTimeout(timer);
-  }, [battle?.battle_id, battle?.status, battle?.reveal_at, battle?.result]);
+  }, [battle?.battle_id, battle?.status, battle?.result, revealDeadline, revealedBattleId]);
 
   async function act(action: () => Promise<BattleRoom>) {
     setBusy(true);
     setError("");
     try {
       const updated = await action();
-      setBattle(updated);
+      applyBattle(updated);
       onChanged();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Не удалось выполнить действие";
@@ -156,8 +171,8 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
           <div className="battle-eyebrow">🎁 ОТКРЫВАЕМ КЕЙСЫ</div>
           <h3>Оба игрока открывают призы</h3>
           <div className="battle-versus">
-            <BattleReel battle={battle} prize={battle.result.you} playerIndex={0} label="ТЫ" duration={(battle.reveal_at ?? Date.now()) - Date.now()} />
-            <BattleReel battle={battle} prize={battle.result.opponent} playerIndex={1} label={battle.result.opponent_username} duration={(battle.reveal_at ?? Date.now()) - Date.now()} />
+            <BattleReel battle={battle} prize={battle.result.you} otherPrize={battle.result.opponent} playerIndex={0} label="ТЫ" duration={Math.max(250, (revealDeadline || Date.now() + 3200) - Date.now())} />
+            <BattleReel battle={battle} prize={battle.result.opponent} otherPrize={battle.result.you} playerIndex={1} label={battle.result.opponent_username} duration={Math.max(250, (revealDeadline || Date.now() + 3200) - Date.now())} />
           </div>
           <p className="muted">Сравниваем выпавшие подарки…</p>
         </section>
