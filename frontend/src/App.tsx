@@ -271,11 +271,6 @@ export default function App() {
               <Ton size={15} />
               <b>{fmt(balance)}</b>
             </div>
-          </header>
-          <div className="play-body">
-            <p className="game-return-notice">
-              Общий коэффициент выплат: <b>{Math.round(globalReturnFactor * 100)}%</b> · применяется ко всем играм и кейсам; это не процент шанса выиграть.
-            </p>
             {game === "Апгрейд" && <UpgradeGame />}
             {game === "Ракетка" && <RocketGame balance={balance} starsPerTon={starsPerTon} telegramId={getTelegramId()} onDeposit={() => setDepositOpen(true)} onBalance={applyGameBalance} onChanged={refreshWallet} />}
             {game === "Мины" && <MinesGame balance={balance} starsPerTon={starsPerTon} telegramId={getTelegramId()} onDeposit={() => setDepositOpen(true)} onBalance={applyGameBalance} onChanged={refreshWallet} />}
