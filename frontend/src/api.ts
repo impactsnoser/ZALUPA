@@ -369,7 +369,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId }),
     }),
-  upgrade: (body: { telegram_id: number; inventory_id: number; target_gift_id: number }) =>
+  upgrade: (body: { telegram_id: number; inventory_ids: number[]; target_gift_id: number }) =>
     request<UpgradeResult>("/api/upgrade", { method: "POST", body: JSON.stringify(body) }),
   startMines: (telegramId: number, betStars: number, mines: number) =>
     request<ServerMinesGame>("/api/mines/start", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, bet_stars: betStars, mines }) }),

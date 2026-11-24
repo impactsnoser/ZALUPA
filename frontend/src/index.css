@@ -367,7 +367,11 @@ audio#secret-track { display: none; }
 .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .pick { position: relative; display: grid; justify-items: center; gap: 4px; padding: 16px 8px 12px; border-radius: 18px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01)), var(--felt-2); border: 1px solid var(--line); transition: transform 0.14s, border-color 0.16s; }
 .pick:hover { border-color: rgba(247, 193, 74, 0.4); }
+.pick.selected { border-color: var(--gold); background: linear-gradient(180deg, rgba(255,205,104,.16), rgba(255,255,255,.025)), var(--felt-2); box-shadow: 0 0 0 1px rgba(255,205,104,.24), 0 8px 24px rgba(255,190,70,.08); }
+.pick:disabled { opacity: .45; cursor: not-allowed; }
 .pick:active { transform: scale(0.98); }
+.upg-pick-summary { margin: 0 0 12px; text-align: center; }
+.upg-pick-done { margin-top: 14px; }
 .pick-art { display: grid; place-items: center; width: 76px; height: 76px; object-fit: contain; font-size: 48px; line-height: 1; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35)); }
 .pick b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 

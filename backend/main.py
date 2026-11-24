@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,7 +66,9 @@ app.include_router(deploy_router)
 
 class UpgradeRequest(BaseModel):
     telegram_id: int
-    inventory_id: int
+    inventory_ids: list[int] | None = Field(default=None, min_length=1, max_length=6)
+    # Backward compatibility with previously cached Mini App clients.
+    inventory_id: int | None = None
     target_gift_id: int
 
 
@@ -244,6 +246,11 @@ async def claim_starter(
     навсегда остался без возможности играть.
     """
     verify_telegram_id(req.telegram_id, init_data)
+    if req.inventory_ids is not None and req.inventory_id is not None:
+        raise HTTPException(status_code=400, detail="Укажите один способ выбора подарков")
+    inventory_ids = req.inventory_ids if req.inventory_ids is not None else ([req.inventory_id] if req.inventory_id is not None else [])
+    if not inventory_ids or len(inventory_ids) > 6:
+        raise HTTPException(status_code=422, detail="Выберите от 1 до 6 подарков")
 
     async with session.begin():
         user = await session.scalar(
@@ -454,51 +461,57 @@ async def upgrade(
         if user is None:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-        # предмет должен существовать и принадлежать именно этому юзеру
-        item = await session.scalar(
+        if len(set(inventory_ids)) != len(inventory_ids):
+            raise HTTPException(status_code=400, detail="Подарки не должны повторяться")
+
+        # Все выбранные предметы должны принадлежать пользователю и блокируются
+        # одной транзакцией, чтобы нельзя было потратить подарок дважды.
+        items = list(await session.scalars(
             select(InventoryItem)
             .options(selectinload(InventoryItem.gift))
             .where(
-                InventoryItem.id == req.inventory_id,
+                InventoryItem.id.in_(inventory_ids),
                 InventoryItem.user_id == user.id,
             )
+            .order_by(InventoryItem.id)
             .with_for_update()
-        )
-        if item is None:
-            raise HTTPException(status_code=404, detail="Предмет не найден в инвентаре")
+        ))
+        if len(items) != len(inventory_ids):
+            raise HTTPException(status_code=404, detail="Один или несколько подарков не найдены в инвентаре")
 
         target = await session.get(Gift, req.target_gift_id)
         if target is None:
             raise HTTPException(status_code=404, detail="Целевой подарок не найден")
 
-        # Кейсовые предметы хранятся как prize_* без gift_id. Если подарок
-        # входит в каталог, связываем его по имени и разрешаем апгрейд так же,
-        # как для обычного подарка из каталога.
-        source_gift = item.gift
-        if source_gift is None and item.prize_name:
-            source_gift = await session.scalar(
-                select(Gift).where(Gift.name == item.prize_name)
-            )
-        if source_gift is None:
-            raise HTTPException(status_code=400, detail="Этот предмет нельзя улучшить")
+        source_gifts: list[Gift] = []
+        from_price = 0
+        for item in items:
+            # Кейсовые предметы хранятся как prize_* без gift_id. Если предмет
+            # есть в каталоге, связываем его по имени.
+            source_gift = item.gift
+            if source_gift is None and item.prize_name:
+                source_gift = await session.scalar(
+                    select(Gift).where(Gift.name == item.prize_name)
+                )
+            if source_gift is None:
+                raise HTTPException(status_code=400, detail="Один из выбранных предметов нельзя улучшить")
+            source_gifts.append(source_gift)
+            item_price = item.prize_value_stars if item.gift is None and item.prize_value_stars is not None else source_gift.price_stars
+            from_price += item_price
 
-        from_price = item.prize_value_stars if item.gift is None and item.prize_value_stars is not None else source_gift.price_stars
         to_price = target.price_stars
         if to_price <= from_price:
             raise HTTPException(
-                status_code=400, detail="Целевой подарок должен быть дороже исходного"
+                status_code=400, detail="Целевой подарок должен быть дороже общей стоимости ставки"
             )
 
         chance = (from_price / to_price) * MARGIN_COEF * await get_global_return_factor(session)
         roll = secrets.randbelow(RNG_PRECISION) / RNG_PRECISION  # [0, 1)
         is_win = roll < chance
 
-        await session.execute(
-            delete(InventoryItem).where(
-                InventoryItem.id == item.id,
-                InventoryItem.user_id == user.id,
-            )
-        )
+        await session.execute(delete(InventoryItem).where(
+            InventoryItem.id.in_(inventory_ids), InventoryItem.user_id == user.id
+        ))
 
         new_inventory_id = None
         if is_win:
@@ -507,14 +520,14 @@ async def upgrade(
             await session.flush()
             new_inventory_id = new_item.id
 
-        session.add(
-            Upgrade(
+        session.add_all(
+            [Upgrade(
                 user_id=user.id,
                 from_gift_id=source_gift.id,
                 to_gift_id=target.id,
                 chance=chance,
                 is_win=is_win,
-            )
+            ) for source_gift in source_gifts]
         )
 
     return {
@@ -522,6 +535,7 @@ async def upgrade(
         "roll": round(roll, 6),      # бросок 0..1; победа, если roll < chance
         "chance": round(chance, 6),  # шанс 0..1
         "new_inventory_id": new_inventory_id,
+        "consumed_count": len(items),
     }
 
 

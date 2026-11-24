@@ -8,6 +8,14 @@ import Sheet from "../ui/Sheet";
 const EMOJI: Record<string, string> = { Мишка: "🧸", Сердце: "💖", Подарок: "🎁", Роза: "🌹", Торт: "🎂", Кубок: "🏆" };
 const SPIN_MS = 5000;
 
+function giftsWord(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return "подарок";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "подарка";
+  return "подарков";
+}
+
 type PickItem = { key: number; name: string; price: number; imageUrl: string | null };
 
 function localGiftImage(name: string): string | null {
@@ -30,7 +38,7 @@ export default function UpgradeGame() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [gifts, setGifts] = useState<Gift[]>([]);
   const [loadError, setLoadError] = useState("");
-  const [fromId, setFromId] = useState<number | null>(null);
+  const [fromIds, setFromIds] = useState<number[]>([]);
   const [toId, setToId] = useState<number | null>(null);
   const [picker, setPicker] = useState<"from" | "to" | null>(null);
   const [query, setQuery] = useState("");
@@ -83,27 +91,29 @@ export default function UpgradeGame() {
     }
   }
 
-  const fromItem = user?.inventory.find((i) => i.inventory_id === fromId) ?? null;
-  const toGift = fromItem && toId !== null ? (gifts.find((g) => g.id === toId && g.price_stars > fromItem.price_stars) ?? null) : null;
-  const preview = fromItem && toGift ? (fromItem.price_stars / toGift.price_stars) * MARGIN * returnFactor : 0;
+  const fromItems = user?.inventory.filter((item) => fromIds.includes(item.inventory_id)) ?? [];
+  const fromValue = fromItems.reduce((sum, item) => sum + item.price_stars, 0);
+  const firstFromItem = fromItems[0] ?? null;
+  const toGift = fromItems.length > 0 && toId !== null ? (gifts.find((g) => g.id === toId && g.price_stars > fromValue) ?? null) : null;
+  const preview = firstFromItem && toGift ? (fromValue / toGift.price_stars) * MARGIN * returnFactor : 0;
   const chance = result ? result.chance : preview;
   const pct = chance * 100;
   const rolling = state === "rolling";
 
   async function upgrade() {
-    if (!fromItem || !toGift || rolling) return;
+    if (fromItems.length === 0 || !toGift || rolling) return;
     setError("");
     setResult(null);
     setState("rolling");
     tg?.HapticFeedback?.impactOccurred("medium");
     try {
-      const res = await api.upgrade({ telegram_id: telegramId, inventory_id: fromItem.inventory_id, target_gift_id: toGift.id });
+      const res = await api.upgrade({ telegram_id: telegramId, inventory_ids: fromIds, target_gift_id: toGift.id });
       setResult(res);
       setRotation((prev) => Math.ceil(prev / 360) * 360 + 360 * 5 + res.roll * 360);
       await new Promise((r) => window.setTimeout(r, SPIN_MS + 250));
       setState(res.win ? "win" : "lose");
       tg?.HapticFeedback?.notificationOccurred(res.win ? "success" : "error");
-      setFromId(null);
+      setFromIds([]);
       setToId(null);
       await load();
     } catch (e) {
@@ -113,8 +123,8 @@ export default function UpgradeGame() {
   }
 
   const fromList: PickItem[] = (user?.inventory ?? []).map((i) => ({ key: i.inventory_id, name: i.name, price: i.price_stars, imageUrl: i.image_url }));
-  const toList: PickItem[] = fromItem
-    ? gifts.filter((g) => g.price_stars > fromItem.price_stars).map((g) => ({ key: g.id, name: g.name, price: g.price_stars, imageUrl: g.image_url }))
+  const toList: PickItem[] = fromItems.length > 0
+    ? gifts.filter((g) => g.price_stars > fromValue).map((g) => ({ key: g.id, name: g.name, price: g.price_stars, imageUrl: g.image_url }))
     : [];
 
   if (loadError) {
@@ -185,19 +195,22 @@ export default function UpgradeGame() {
       </div>
 
       <div className="swap">
-        {slot("Твой подарок", fromItem?.name ?? null, fromItem?.price_stars ?? null, fromItem?.image_url ?? null, "Выбери из инвентаря", () => (setQuery(""), setPicker("from")), rolling)}
+        {slot(`Твои подарки · ${fromItems.length}/6`, fromItems.length ? (fromItems.length === 1 ? firstFromItem!.name : `${fromItems.length} подарков выбрано`) : null, fromItems.length ? fromValue : null, firstFromItem?.image_url ?? null, "Выбери до 6 из инвентаря", () => (setQuery(""), setPicker("from")), rolling)}
         <span className="swap-arrow" aria-hidden="true">⇄</span>
-        {slot("Хочу получить", toGift?.name ?? null, toGift?.price_stars ?? null, toGift?.image_url ?? null, fromItem ? "Выбери цель" : "Сначала свой", () => (setQuery(""), setPicker("to")), rolling || !fromItem)}
+        {slot("Хочу получить", toGift?.name ?? null, toGift?.price_stars ?? null, toGift?.image_url ?? null, fromItems.length ? "Выбери цель дороже ставки" : "Сначала выбери подарки", () => (setQuery(""), setPicker("to")), rolling || fromItems.length === 0)}
       </div>
 
       {toGift && !result && (
-        <div className="upg-odds">
-          <span>Шанс успеха</span>
-          <div className="upg-bar">
-            <i style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+        <>
+          <div className="upg-odds">
+            <span>Шанс успеха</span>
+            <div className="upg-bar">
+              <i style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+            </div>
+            <b>{fmt(pct)}%</b>
           </div>
-          <b>{fmt(pct)}%</b>
-        </div>
+          <small className="muted">Ставка — {fromItems.length} {giftsWord(fromItems.length)} общей стоимостью ⭐ {fmt(fromValue)}. При неудаче все выбранные подарки сгорят.</small>
+        </>
       )}
 
       {result && !rolling && (
@@ -216,12 +229,17 @@ export default function UpgradeGame() {
         </div>
       )}
 
-      <button className="btn primary wide upg-cta" onClick={upgrade} disabled={!fromItem || !toGift || rolling}>
+      <button className="btn primary wide upg-cta" onClick={upgrade} disabled={fromItems.length === 0 || !toGift || rolling}>
         {rolling ? "Крутим…" : toGift ? `Улучшить с шансом ${fmt(pct)}%` : "Улучшить"}
       </button>
 
       {picker && (
         <Sheet title={picker === "from" ? "Твой инвентарь" : "Каталог, только дороже"} onClose={() => setPicker(null)}>
+          {picker === "from" && (
+            <p className="fine upg-pick-summary">
+              Выбрано {fromItems.length} из 6 · общая ставка: ⭐ {fmt(fromValue)}
+            </p>
+          )}
           <div className="pick-tools">
             <input
               className="pick-search"
@@ -244,15 +262,22 @@ export default function UpgradeGame() {
                 {filtered.map((it) => (
                   <button
                     key={it.key}
-                    className="pick"
+                    className={`pick${picker === "from" && fromIds.includes(it.key) ? " selected" : ""}`}
+                    disabled={picker === "from" && fromIds.length >= 6 && !fromIds.includes(it.key)}
                     onClick={() => {
                       if (picker === "from") {
-                        setFromId(it.key);
+                        setFromIds((current) => current.includes(it.key)
+                          ? current.filter((id) => id !== it.key)
+                          : current.length < 6 ? [...current, it.key] : current);
                         setToId(null);
-                      } else setToId(it.key);
-                      setState("ready");
-                      setResult(null);
-                      setPicker(null);
+                        setState("ready");
+                        setResult(null);
+                      } else {
+                        setToId(it.key);
+                        setState("ready");
+                        setResult(null);
+                        setPicker(null);
+                      }
                     }}
                   >
                     <GiftArt className="pick-art" name={it.name} imageUrl={it.imageUrl} />
@@ -262,6 +287,11 @@ export default function UpgradeGame() {
                 ))}
               </div>
             </div>
+          )}
+          {picker === "from" && (
+            <button className="btn primary wide upg-pick-done" onClick={() => setPicker(null)} disabled={fromItems.length === 0}>
+              Готово · {fromItems.length} выбрано
+            </button>
           )}
         </Sheet>
       )}
