@@ -11,6 +11,7 @@ type GameProps = {
 
 export default function RocketGame({ balance, onSpend, onWin, onDeposit }: GameProps) {
   const [bet, setBet] = useState(1);
+  const [betInput, setBetInput] = useState("1");
   const [mult, setMult] = useState(1);
   const [crashAt, setCrashAt] = useState(2);
   const [phase, setPhase] = useState<"ready" | "running" | "crashed" | "cashed">("ready");
@@ -32,11 +33,25 @@ export default function RocketGame({ balance, onSpend, onWin, onDeposit }: GameP
   }, [phase, crashAt]);
 
   function launch() {
+    if (!Number.isFinite(bet) || bet < 0.01 || bet > 100_000) return;
     if (balance < bet) return onDeposit();
     onSpend(bet, "Ракетка");
     setMult(1);
     setCrashAt(Number((1.2 + Math.random() * 2.6).toFixed(2)));
     setPhase("running");
+  }
+
+  function updateBet(next: number) {
+    const normalized = Math.min(100_000, Math.max(0.01, next));
+    const rounded = Number(normalized.toFixed(2));
+    setBet(rounded);
+    setBetInput(String(rounded));
+  }
+
+  function editBet(value: string) {
+    const normalized = value.replace(",", ".").replace(/[^\d.]/g, "");
+    setBetInput(normalized);
+    setBet(Number(normalized) || 0);
   }
 
   function cash() {
@@ -57,14 +72,14 @@ export default function RocketGame({ balance, onSpend, onWin, onDeposit }: GameP
         {phase === "cashed" && <p className="flight-msg good">Забрал {fmt(bet * mult)}</p>}
       </div>
       <div className="stepper">
-        <button onClick={() => setBet(Math.max(0.5, bet - 0.5))} disabled={phase === "running"} aria-label="Меньше">
+        <button onClick={() => updateBet(bet - 0.5)} disabled={phase === "running"} aria-label="Меньше ставка">
           −
         </button>
-        <b>
+        <label className="bet-value" aria-label="Ставка в TON">
           <Ton size={16} />
-          {fmt(bet)}
-        </b>
-        <button onClick={() => setBet(bet + 0.5)} disabled={phase === "running"} aria-label="Больше">
+          {phase === "running" ? <b>{fmt(bet)}</b> : <input type="text" inputMode="decimal" value={betInput} onChange={(event) => editBet(event.target.value)} />}
+        </label>
+        <button onClick={() => updateBet(bet + 0.5)} disabled={phase === "running"} aria-label="Больше ставка">
           +
         </button>
       </div>
@@ -73,7 +88,7 @@ export default function RocketGame({ balance, onSpend, onWin, onDeposit }: GameP
           Забрать {fmt(bet * mult)}
         </button>
       ) : (
-        <button className="btn primary wide" onClick={launch}>
+        <button className="btn primary wide" onClick={launch} disabled={!Number.isFinite(bet) || bet < 0.01 || bet > 100_000}>
           {phase === "ready" ? "Сделать ставку" : "Сыграть ещё"}
         </button>
       )}
