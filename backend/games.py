@@ -206,8 +206,12 @@ def _battle_card(case: dict) -> dict:
 
 
 async def _battle_view(session: AsyncSession, battle: CaseBattle, viewer_id: int) -> dict:
+    viewer = await session.scalar(select(User).where(User.telegram_id == viewer_id))
     owner = await session.get(User, battle.creator_id)
     opponent = await session.get(User, battle.opponent_id) if battle.opponent_id else None
+    viewer_user_id = viewer.id if viewer else None
+    mine_is_creator = viewer_user_id == battle.creator_id
+    other_player = opponent if mine_is_creator else owner
     case = _case(battle.case_id)
     result = None
     if battle.status == "completed":
@@ -223,17 +227,16 @@ async def _battle_view(session: AsyncSession, battle: CaseBattle, viewer_id: int
                 "image_url": item.prize_image_url,
             }
 
-        mine_is_creator = viewer_id == battle.creator_id
         result = {
             "you": prize_view(creator_item if mine_is_creator else opponent_item),
             "opponent": prize_view(opponent_item if mine_is_creator else creator_item),
-            "won": battle.winner_id == viewer_id,
+            "won": battle.winner_id == viewer_user_id,
             "draw": battle.winner_id is None,
             "winner_username": (owner if battle.winner_id == battle.creator_id else opponent).username
             if battle.winner_id is not None else None,
-            "you_receive_both": battle.winner_id == viewer_id,
+            "opponent_username": other_player.username if other_player and other_player.username else "Игрок",
+            "you_receive_both": battle.winner_id == viewer_user_id,
         }
-    user = await session.scalar(select(User).where(User.telegram_id == viewer_id))
     return {
         "battle_id": battle.id,
         "status": battle.status,
@@ -244,8 +247,8 @@ async def _battle_view(session: AsyncSession, battle: CaseBattle, viewer_id: int
         "opponent_username": opponent.username if opponent and opponent.username else None,
         "expires_at": battle.expires_at,
         "result": result,
-        "balance_stars": user.balance_stars if user else 0,
-        "balance_ton": stars_to_ton(user.balance_stars) if user else 0,
+        "balance_stars": viewer.balance_stars if viewer else 0,
+        "balance_ton": stars_to_ton(viewer.balance_stars) if viewer else 0,
     }
 
 
@@ -390,8 +393,8 @@ async def join_battle(
             opponent_item = _battle_prize_item(user.id, opponent_prize)
             session.add_all([creator_item, opponent_item])
             await session.flush()
-            creator_value = creator_item.prize_value_stars or 0
-            opponent_value = opponent_item.prize_value_stars or 0
+            creator_value = float(creator_prize["value"])
+            opponent_value = float(opponent_prize["value"])
             if creator_value == opponent_value:
                 winner_id = None
             elif creator_value > opponent_value:

@@ -118,7 +118,7 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
                 {prize?.image_url ? <img src={prize.image_url} alt="" /> : <span>🎁</span>}
                 <b>{prize?.name ?? "Приз"}</b>
                 <small>{fmt((prize?.value_stars ?? 0) / starsPerTon)} TON</small>
-                <label>{index === 0 ? "ТЫ" : battle.opponent_username ?? "СОПЕРНИК"}</label>
+                <label>{index === 0 ? "ТЫ" : battle.result?.opponent_username ?? "СОПЕРНИК"}</label>
               </div>
             ))}
           </div>

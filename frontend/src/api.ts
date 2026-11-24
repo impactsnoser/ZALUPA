@@ -217,6 +217,7 @@ export interface BattleRoom {
     won: boolean;
     draw: boolean;
     winner_username: string | null;
+    opponent_username: string;
     you_receive_both: boolean;
   } | null;
   balance_stars: number;
