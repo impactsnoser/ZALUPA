@@ -54,6 +54,9 @@ _frontend_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_frontend_origins or ["*"],
+    # Telegram Mini Apps may send their own Web origin on some clients rather
+    # than the Railway origin of the embedded frontend.
+    allow_origin_regex=r"^https://([a-z0-9-]+\.)*(telegram\.org|t\.me|telegram\.me)$",
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
