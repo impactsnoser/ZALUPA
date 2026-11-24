@@ -78,10 +78,20 @@ function BulkReelPlaceholders({ count }: { count: number }) {
   </div>;
 }
 
+function displayedPrizeChance(prize: Prize, prizes: Prize[], returnFactor: number): number {
+  if (returnFactor >= 1) return chanceOf(prize);
+  const maxValue = Math.max(...prizes.map((item) => item.value), 1);
+  const weights = prizes.map((item) => item.weight * (returnFactor ** (item.value / maxValue)));
+  const index = prizes.findIndex((item) => item.id === prize.id);
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  return total > 0 && index >= 0 ? (weights[index] / total) * 100 : 0;
+}
+
 export default function CaseModal({
   caseId,
   telegramId,
   balance,
+  globalReturnFactor,
   onClose,
   onDeposit,
   onCredited,
@@ -89,6 +99,7 @@ export default function CaseModal({
   caseId: string;
   telegramId: number;
   balance: number;
+  globalReturnFactor: number;
   onClose: () => void;
   onDeposit: () => void;
   onCredited: () => void;
@@ -473,14 +484,12 @@ export default function CaseModal({
               {fmt(p.value)}
             </span>
             <PrizeArt prize={p} size={52} />
-            <span className="prize-tile-chance">{fmtChance(chanceOf(p))}%</span>
+            <span className="prize-tile-chance">{fmtChance(displayedPrizeChance(p, def.prizes, globalReturnFactor))}%</span>
           </div>
         ))}
       </div>
       <p className="fine">
-        Розыгрыш идёт на сервере. Возврат игроку{" "}
-        {rtpOf(def).toFixed(1).replace(".", ",")}%, шанс получить приз не меньше цены кейса{" "}
-        {paybackChance(def).toFixed(2).replace(".", ",")}%.
+        Розыгрыш идёт на сервере. Базовый возврат по таблице кейса {rtpOf(def).toFixed(1).replace(".", ",")}%, базовый шанс получить приз не меньше цены кейса {paybackChance(def).toFixed(2).replace(".", ",")}%. Общий коэффициент выплат сейчас {Math.round(globalReturnFactor * 100)}%: при значении ниже 100% дорогие предметы выпадают реже. Это не процент шанса выиграть.
       </p>
     </section>
   );

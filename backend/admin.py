@@ -17,6 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import ADMIN_IDS, MAX_LUCK
 from database import AppSetting, User, get_session
 from games import CASES
+from game_settings import (
+    DEFAULT_GLOBAL_RETURN_FACTOR,
+    GLOBAL_RETURN_FACTOR_KEY,
+    MAX_GLOBAL_RETURN_FACTOR,
+    MIN_GLOBAL_RETURN_FACTOR,
+    get_global_return_factor,
+)
 from telegram_auth import get_init_data, verify_telegram_id
 from wallet import _add_transaction
 
@@ -225,7 +232,33 @@ async def admin_settings(
     init_data: str | None = Depends(get_init_data),
 ):
     await _load_admin(session, telegram_id, init_data)
-    return {"cases": await _case_luck_values(session), "max_luck": MAX_LUCK}
+    return {
+        "cases": await _case_luck_values(session),
+        "max_luck": MAX_LUCK,
+        "global_return_factor": await get_global_return_factor(session),
+    }
+
+
+class GlobalReturnFactorRequest(BaseModel):
+    factor: float = Field(ge=MIN_GLOBAL_RETURN_FACTOR, le=MAX_GLOBAL_RETURN_FACTOR)
+
+
+@router.post("/settings/global-return-factor")
+async def set_global_return_factor(
+    req: GlobalReturnFactorRequest,
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    await _load_admin(session, telegram_id, init_data)
+    value = round(float(req.factor), 2)
+    setting = await session.get(AppSetting, GLOBAL_RETURN_FACTOR_KEY)
+    if setting is None:
+        session.add(AppSetting(key=GLOBAL_RETURN_FACTOR_KEY, value=str(value)))
+    else:
+        setting.value = str(value)
+    await session.commit()
+    return {"ok": True, "global_return_factor": value}
 
 
 class CaseLuckRequest(BaseModel):

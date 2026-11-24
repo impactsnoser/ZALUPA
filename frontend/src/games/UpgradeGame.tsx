@@ -39,6 +39,7 @@ export default function UpgradeGame() {
   const [result, setResult] = useState<UpgradeResult | null>(null);
   const [error, setError] = useState("");
   const [starterLoading, setStarterLoading] = useState(false);
+  const [returnFactor, setReturnFactor] = useState(0.8);
 
   const load = useCallback(async () => {
     setLoadError("");
@@ -64,6 +65,10 @@ export default function UpgradeGame() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    void api.getGameSettings().then((settings) => setReturnFactor(settings.global_return_factor)).catch(() => setReturnFactor(0.8));
+  }, []);
+
   async function claimStarter() {
     if (starterLoading) return;
     setStarterLoading(true);
@@ -80,7 +85,7 @@ export default function UpgradeGame() {
 
   const fromItem = user?.inventory.find((i) => i.inventory_id === fromId) ?? null;
   const toGift = fromItem && toId !== null ? (gifts.find((g) => g.id === toId && g.price_stars > fromItem.price_stars) ?? null) : null;
-  const preview = fromItem && toGift ? (fromItem.price_stars / toGift.price_stars) * MARGIN : 0;
+  const preview = fromItem && toGift ? (fromItem.price_stars / toGift.price_stars) * MARGIN * returnFactor : 0;
   const chance = result ? result.chance : preview;
   const pct = chance * 100;
   const rolling = state === "rolling";

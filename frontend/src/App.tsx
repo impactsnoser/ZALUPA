@@ -64,6 +64,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [toast, setToast] = useState("");
   const [musicPlaying, setMusicPlaying] = useState(false);
+  const [globalReturnFactor, setGlobalReturnFactor] = useState(0.8);
 
   const tgUser = tg?.initDataUnsafe?.user;
   const name = tgUser?.first_name ?? tgUser?.username ?? "Игрок";
@@ -128,45 +129,21 @@ export default function App() {
   }, [refreshWallet]);
 
   useEffect(() => {
+    void api.getGameSettings()
+      .then((settings) => setGlobalReturnFactor(settings.global_return_factor))
+      .catch(() => setGlobalReturnFactor(0.8));
+  }, []);
+
+  useEffect(() => {
     if (!toast) return;
     const t = window.setTimeout(() => setToast(""), 2200);
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const log = (label: string, amount: number) =>
-    setTransactions((cur) => [{ id: Date.now() + Math.random(), label, amount, date: "Только что" }, ...cur]);
-
-  function spend(amount: number, label: string) {
-    const amountStars = Math.max(1, Math.round(amount * starsPerTon));
-    setBalance((b) => Math.max(0, b - amount));
-    setBalanceStars((s) => Math.max(0, s - amountStars));
-    setActivityCount((count) => count + 1);
-    log(label, -amount);
-    api
-      .spend(getTelegramId(), amountStars, label)
-      .then((res) => {
-        setBalanceStars(res.balance_stars);
-        setBalance(res.balance_ton);
-      })
-      .catch((err) => {
-        setToast(err instanceof Error ? err.message : "Ставка не принята");
-        void refreshWallet();
-      });
-  }
-
-  function win(amount: number, label: string) {
-    const amountStars = Math.max(1, Math.round(amount * starsPerTon));
-    setBalance((b) => b + amount);
-    setBalanceStars((s) => s + amountStars);
-    log(label, amount);
-    api
-      .credit(getTelegramId(), amountStars, label)
-      .then((res) => {
-        setBalanceStars(res.balance_stars);
-        setBalance(res.balance_ton);
-      })
-      .catch(() => void refreshWallet());
-  }
+  const applyGameBalance = useCallback((stars: number, ton: number) => {
+    setBalanceStars(stars);
+    setBalance(ton);
+  }, []);
 
   async function copyLink() {
     try {
@@ -195,7 +172,6 @@ export default function App() {
   }
 
   const closeGame = () => setGame(null);
-  const gameProps = { balance, onSpend: spend, onWin: win, onDeposit: () => setDepositOpen(true) };
 
   function toggleSecretMusic() {
     const audio = document.getElementById("secret-track") as HTMLAudioElement | null;
@@ -297,9 +273,12 @@ export default function App() {
             </div>
           </header>
           <div className="play-body">
+            <p className="game-return-notice">
+              Общий коэффициент выплат: <b>{Math.round(globalReturnFactor * 100)}%</b> · применяется ко всем играм и кейсам; это не процент шанса выиграть.
+            </p>
             {game === "Апгрейд" && <UpgradeGame />}
-            {game === "Ракетка" && <RocketGame {...gameProps} />}
-            {game === "Мины" && <MinesGame {...gameProps} />}
+            {game === "Ракетка" && <RocketGame balance={balance} starsPerTon={starsPerTon} telegramId={getTelegramId()} onDeposit={() => setDepositOpen(true)} onBalance={applyGameBalance} onChanged={refreshWallet} />}
+            {game === "Мины" && <MinesGame balance={balance} starsPerTon={starsPerTon} telegramId={getTelegramId()} onDeposit={() => setDepositOpen(true)} onBalance={applyGameBalance} onChanged={refreshWallet} />}
             {game === "Ледяная шахта" && (
               <SnowfallGame
                 balance={balance}
@@ -326,6 +305,7 @@ export default function App() {
           caseId={caseId}
           telegramId={getTelegramId()}
           balance={balance}
+          globalReturnFactor={globalReturnFactor}
           onClose={() => setCaseId(null)}
           onDeposit={() => (setCaseId(null), setDepositOpen(true))}
           onCredited={refreshWallet}

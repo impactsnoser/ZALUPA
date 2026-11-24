@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import MAX_LUCK, SELL_COEF, STARS_PER_TON
+from game_settings import get_global_return_factor
 from database import (
     AppSetting,
     CaseBattle,
@@ -36,6 +37,12 @@ from wallet import _add_transaction, _user_by_telegram_id, stars_to_ton
 router = APIRouter(prefix="/api")
 
 TOTAL_WEIGHT = 10_000
+
+
+@router.get("/game-settings")
+async def public_game_settings(session: AsyncSession = Depends(get_session)):
+    """Expose active payout policy so players can see the configured factor."""
+    return {"global_return_factor": await get_global_return_factor(session)}
 MINES_CELLS = 25
 MINES_RTP = 0.95
 ROCKET_RTP = 0.95
@@ -91,7 +98,7 @@ async def _case_luck(session: AsyncSession, case_id: str) -> float:
         return 1.0
 
 
-def _draw_prize(case: dict, luck: float = 1.0) -> dict:
+def _draw_prize(case: dict, luck: float = 1.0, return_factor: float = 1.0) -> dict:
     """Взвешенный розыгрыш.
 
     luck = 1 — обычные веса. При luck > 1 вес дорогих призов растёт сильнее,
@@ -100,19 +107,25 @@ def _draw_prize(case: dict, luck: float = 1.0) -> dict:
     luck = max(1.0, min(MAX_LUCK, luck))
     prizes = case["prizes"]
 
-    if luck <= 1.0:
+    max_value = max(prize["value"] for prize in prizes) or 1.0
+    if return_factor < 1.0:
+        # Global policy has priority over per-case or per-user luck boosts.
+        weights = [
+            prize["weight"] * (return_factor ** (prize["value"] / max_value))
+            for prize in prizes
+        ]
+    elif luck <= 1.0:
         roll = secrets.randbelow(TOTAL_WEIGHT)
         for prize in prizes:
             if roll < prize["weight"]:
                 return prize
             roll -= prize["weight"]
         return prizes[-1]
-
-    max_value = max(prize["value"] for prize in prizes) or 1.0
-    weights = [
-        prize["weight"] * (1.0 + (luck - 1.0) * (prize["value"] / max_value))
-        for prize in prizes
-    ]
+    else:
+        weights = [
+            prize["weight"] * (1.0 + (luck - 1.0) * (prize["value"] / max_value))
+            for prize in prizes
+        ]
     roll = secrets.randbelow(1_000_000) / 1_000_000 * sum(weights)
     for prize, weight in zip(prizes, weights):
         if roll < weight:
@@ -151,6 +164,7 @@ async def open_case(
         case_luck = await _case_luck(session, case["id"])
         user_luck = max(1.0, min(MAX_LUCK, float(user.luck_multiplier or 1.0)))
         luck = min(MAX_LUCK, case_luck * user_luck)
+        return_factor = await get_global_return_factor(session)
 
         user.balance_stars -= bet_stars
         _add_transaction(
@@ -161,7 +175,7 @@ async def open_case(
             label=f"Кейс «{case['title']}»",
         )
 
-        prize = _draw_prize(case, luck)
+        prize = _draw_prize(case, luck, return_factor)
         prize_stars = _ton_to_stars(prize["value"])
         # Приз именуем как в каталоге: запасной emoji не нужен, есть картинка.
         inventory_item = InventoryItem(
@@ -398,8 +412,9 @@ async def join_battle(
             case_luck = await _case_luck(session, case["id"])
             creator_luck = min(MAX_LUCK, case_luck * max(1.0, min(MAX_LUCK, float(owner.luck_multiplier or 1.0))))
             opponent_luck = min(MAX_LUCK, case_luck * max(1.0, min(MAX_LUCK, float(user.luck_multiplier or 1.0))))
-            creator_prize = _draw_prize(case, creator_luck)
-            opponent_prize = _draw_prize(case, opponent_luck)
+            return_factor = await get_global_return_factor(session)
+            creator_prize = _draw_prize(case, creator_luck, return_factor)
+            opponent_prize = _draw_prize(case, opponent_luck, return_factor)
             creator_item = _battle_prize_item(owner.id, creator_prize)
             opponent_item = _battle_prize_item(user.id, opponent_prize)
             session.add_all([creator_item, opponent_item])
@@ -484,7 +499,7 @@ def _join_positions(positions: list[int]) -> str:
     return ",".join(str(position) for position in sorted(set(positions)))
 
 
-def _mines_multiplier(mines_count: int, opened: int) -> float:
+def _mines_multiplier(mines_count: int, opened: int, return_factor: float = 1.0) -> float:
     """Честный множитель: 1 / вероятность открыть opened безопасных клеток.
 
     Домножен на RTP (0.95), то есть у проекта остаётся 5% преимущества.
@@ -493,7 +508,7 @@ def _mines_multiplier(mines_count: int, opened: int) -> float:
         return 1.0
     safe_cells = MINES_CELLS - mines_count
     probability = comb(safe_cells, opened) / comb(MINES_CELLS, opened)
-    return round(MINES_RTP / probability, 2)
+    return round(MINES_RTP * return_factor / probability, 2)
 
 
 def _mines_state(
@@ -501,7 +516,7 @@ def _mines_state(
 ) -> dict:
     opened = _parse_positions(game.opened_positions)
     multiplier = (
-        _mines_multiplier(game.mines_count, len(opened))
+        _mines_multiplier(game.mines_count, len(opened), game.return_factor)
         if game.status in {"active", "won"}
         else 0.0
     )
@@ -542,6 +557,7 @@ async def start_mines(
 
     async with session.begin():
         user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        return_factor = await get_global_return_factor(session)
 
         # Незавершённая партия сгорает: нельзя копить активные игры.
         active_games = (
@@ -571,6 +587,7 @@ async def start_mines(
         game = MinesSession(
             user_id=user.id,
             bet_stars=req.bet_stars,
+            return_factor=return_factor,
             mines_count=req.mines,
             mine_positions=_join_positions(mines),
             opened_positions="",
@@ -631,7 +648,7 @@ async def open_mine(
 
             safe_cells = MINES_CELLS - game.mines_count
             if len(opened) >= safe_cells:
-                multiplier = _mines_multiplier(game.mines_count, len(opened))
+                multiplier = _mines_multiplier(game.mines_count, len(opened), game.return_factor)
                 payout = max(1, int(round(game.bet_stars * multiplier)))
                 user.balance_stars += payout
                 game.payout_stars = payout
@@ -680,7 +697,7 @@ async def cashout_mines(
                 status_code=400, detail="Сначала откройте хотя бы одну клетку"
             )
 
-        multiplier = _mines_multiplier(game.mines_count, len(opened))
+        multiplier = _mines_multiplier(game.mines_count, len(opened), game.return_factor)
         payout = max(1, int(round(game.bet_stars * multiplier)))
         user.balance_stars += payout
         game.payout_stars = payout
@@ -788,10 +805,12 @@ async def start_rocket(
         # Распределение с постоянным RTP 95%: P(crash >= x) = RTP / x.
         # Точка падения никогда не раскрывается до завершения партии.
         roll = secrets.randbelow(1_000_000) / 1_000_000
-        crash = min(ROCKET_MAX_MULTIPLIER, max(1.01, ROCKET_RTP / (1 - roll)))
+        return_factor = await get_global_return_factor(session)
+        crash = min(ROCKET_MAX_MULTIPLIER, max(1.01, ROCKET_RTP * return_factor / (1 - roll)))
         game = RocketSession(
             user_id=user.id,
             bet_stars=req.bet_stars,
+            return_factor=return_factor,
             crash_milli=max(1010, int(round(crash * 1000))),
             status="active",
             payout_stars=0,
@@ -968,17 +987,15 @@ async def start_snowfall(
         if user.balance_stars < req.bet_stars:
             raise HTTPException(status_code=400, detail="Недостаточно средств")
 
-        tool_roll = secrets.randbelow(1000)
-        if tool_roll < 520:
-            tool = SNOWFALL_TOOLS[0]
-        elif tool_roll < 800:
-            tool = SNOWFALL_TOOLS[1]
-        elif tool_roll < 940:
-            tool = SNOWFALL_TOOLS[2]
-        elif tool_roll < 990:
-            tool = SNOWFALL_TOOLS[3]
-        else:
-            tool = SNOWFALL_TOOLS[4]
+        return_factor = await get_global_return_factor(session)
+        tool_weights = [weight * (return_factor ** index) for index, weight in enumerate([520, 280, 140, 50, 10])]
+        tool_roll = secrets.randbelow(1_000_000) / 1_000_000 * sum(tool_weights)
+        tool = SNOWFALL_TOOLS[-1]
+        for candidate, weight in zip(SNOWFALL_TOOLS, tool_weights):
+            if tool_roll < weight:
+                tool = candidate
+                break
+            tool_roll -= weight
 
         blocks = []
         for _ in range(SNOWFALL_TARGET):
@@ -996,6 +1013,7 @@ async def start_snowfall(
             user_id=user.id,
             round_key=secrets.token_urlsafe(18),
             bet_stars=req.bet_stars,
+            return_factor=return_factor,
             tool_name=tool["name"],
             tool_emoji=tool["emoji"],
             tool_rarity=tool["rarity"],
@@ -1083,7 +1101,9 @@ async def open_snowfall_chest(
         rare_gifts = [gift for gift in gifts if not gift.is_nft and gift.price_stars <= 250]
         full_run = game.progress >= game.target
         roll = secrets.randbelow(10_000)
-        if full_run and nft_gifts and roll < 50:
+        nft_threshold = int(round(50 * game.return_factor))
+        rare_threshold = int(round(450 * game.return_factor))
+        if full_run and nft_gifts and roll < nft_threshold:
             gift = secrets.choice(nft_gifts)
             item = InventoryItem(user_id=user.id, gift_id=gift.id)
             session.add(item)
@@ -1093,7 +1113,7 @@ async def open_snowfall_chest(
             game.reward_emoji = "💎"
             game.reward_stars = 0
             game.inventory_id = item.id
-        elif game.progress >= 5 and rare_gifts and roll < 450:
+        elif game.progress >= 5 and rare_gifts and roll < rare_threshold:
             gift = secrets.choice(rare_gifts)
             item = InventoryItem(user_id=user.id, gift_id=gift.id)
             session.add(item)
@@ -1105,7 +1125,7 @@ async def open_snowfall_chest(
             game.inventory_id = item.id
         else:
             ratio = game.progress / max(1, game.target)
-            payout = max(1, int(round(game.bet_stars * (0.12 + 0.88 * ratio))))
+            payout = max(1, int(round(game.bet_stars * (0.12 + 0.88 * ratio) * game.return_factor)))
             user.balance_stars += payout
             game.reward_kind = "stars"
             game.reward_name = "Звёзды"

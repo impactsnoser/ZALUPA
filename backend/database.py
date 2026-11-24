@@ -239,6 +239,7 @@ class MinesSession(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     bet_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    return_factor: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     mines_count: Mapped[int] = mapped_column(Integer, nullable=False)
     # Позиции храним строкой "1,7,13": так одинаково работает SQLite и Postgres.
     mine_positions: Mapped[str] = mapped_column(String, nullable=False)
@@ -266,6 +267,7 @@ class RocketSession(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     bet_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    return_factor: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     crash_milli: Mapped[int] = mapped_column(Integer, nullable=False)
     cashout_milli: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="active")
@@ -291,6 +293,7 @@ class SnowfallSession(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     round_key: Mapped[str] = mapped_column(String, nullable=False)
     bet_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    return_factor: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     tool_name: Mapped[str] = mapped_column(String, nullable=False)
     tool_emoji: Mapped[str] = mapped_column(String, nullable=False)
     tool_rarity: Mapped[str] = mapped_column(String, nullable=False)
@@ -412,18 +415,34 @@ async def _migrate_users(connection) -> None:
                 """
             )
         )
-        return
+    else:
+        rows = (await connection.execute(text("PRAGMA table_info(users)"))).all()
+        existing = {row[1] for row in rows}
+        if "is_admin" not in existing:
+            await connection.execute(
+                text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0")
+            )
+        if "luck_multiplier" not in existing:
+            await connection.execute(
+                text("ALTER TABLE users ADD COLUMN luck_multiplier FLOAT NOT NULL DEFAULT 1.0")
+            )
 
-    rows = (await connection.execute(text("PRAGMA table_info(users)"))).all()
-    existing = {row[1] for row in rows}
-    if "is_admin" not in existing:
-        await connection.execute(
-            text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0")
-        )
-    if "luck_multiplier" not in existing:
-        await connection.execute(
-            text("ALTER TABLE users ADD COLUMN luck_multiplier FLOAT NOT NULL DEFAULT 1.0")
-        )
+
+async def _migrate_game_return_factor(connection) -> None:
+    """Snapshot the global payout factor when a server-side round starts."""
+    tables = ("mines_sessions", "rocket_sessions", "snowfall_sessions")
+    if connection.dialect.name == "postgresql":
+        for table in tables:
+            await connection.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS return_factor DOUBLE PRECISION NOT NULL DEFAULT 1.0"
+            ))
+        return
+    for table in tables:
+        rows = (await connection.execute(text(f"PRAGMA table_info({table})"))).all()
+        if "return_factor" not in {row[1] for row in rows}:
+            await connection.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN return_factor FLOAT NOT NULL DEFAULT 1.0"
+            ))
 
 
 async def init_db() -> None:
@@ -431,6 +450,7 @@ async def init_db() -> None:
         await connection.run_sync(Base.metadata.create_all)
         await _migrate_inventory(connection)
         await _migrate_users(connection)
+        await _migrate_game_return_factor(connection)
 
 
 async def seed_db() -> None:

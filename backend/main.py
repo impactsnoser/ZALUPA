@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import SELL_COEF, STARS_PER_TON, WELCOME_STARS
+from game_settings import get_global_return_factor
 from deploy_services import router as deploy_router
 from database import (
     Gift,
@@ -488,7 +489,7 @@ async def upgrade(
                 status_code=400, detail="Целевой подарок должен быть дороже исходного"
             )
 
-        chance = (from_price / to_price) * MARGIN_COEF
+        chance = (from_price / to_price) * MARGIN_COEF * await get_global_return_factor(session)
         roll = secrets.randbelow(RNG_PRECISION) / RNG_PRECISION  # [0, 1)
         is_win = roll < chance
 

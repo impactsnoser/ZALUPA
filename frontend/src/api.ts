@@ -178,6 +178,39 @@ export interface AdminCaseSetting {
 export interface AdminSettings {
   cases: AdminCaseSetting[];
   max_luck: number;
+  global_return_factor: number;
+}
+
+export interface GlobalGameSettings {
+  global_return_factor: number;
+}
+
+export interface ServerMinesGame {
+  session_id: number;
+  status: "active" | "lost" | "won" | "abandoned";
+  bet_stars: number;
+  bet_ton: number;
+  mines_count: number;
+  opened: number[];
+  mines: number[] | null;
+  multiplier: number;
+  payout_stars: number;
+  payout_ton: number;
+  balance_stars: number;
+  balance_ton: number;
+}
+
+export interface ServerRocketGame {
+  session_id: number;
+  status: "active" | "lost" | "won" | "abandoned";
+  bet_stars: number;
+  bet_ton: number;
+  multiplier: number;
+  crash_multiplier: number | null;
+  payout_stars: number;
+  payout_ton: number;
+  balance_stars: number;
+  balance_ton: number;
 }
 
 export interface UpgradeResult {
@@ -315,6 +348,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getGameSettings: () => request<GlobalGameSettings>("/api/game-settings"),
   getUser: (telegramId: number) => request<UserProfile>(`/api/user/${telegramId}`),
   getBattleCases: () => request<BattleCase[]>("/api/battles/cases"),
   getBattleLobby: (telegramId: number) => request<{ rooms: { battle_id: string; username: string; case: BattleCase; bet_stars: number; bet_ton: number; expires_at: number }[] }>(`/api/battles/lobby?telegram_id=${telegramId}`),
@@ -337,6 +371,18 @@ export const api = {
     }),
   upgrade: (body: { telegram_id: number; inventory_id: number; target_gift_id: number }) =>
     request<UpgradeResult>("/api/upgrade", { method: "POST", body: JSON.stringify(body) }),
+  startMines: (telegramId: number, betStars: number, mines: number) =>
+    request<ServerMinesGame>("/api/mines/start", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, bet_stars: betStars, mines }) }),
+  openMine: (telegramId: number, sessionId: number, cell: number) =>
+    request<ServerMinesGame>("/api/mines/open", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId, cell }) }),
+  cashoutMines: (telegramId: number, sessionId: number) =>
+    request<ServerMinesGame>("/api/mines/cashout", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }) }),
+  startRocket: (telegramId: number, betStars: number) =>
+    request<ServerRocketGame>("/api/rocket/start", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, bet_stars: betStars }) }),
+  checkRocket: (telegramId: number, sessionId: number) =>
+    request<ServerRocketGame>("/api/rocket/check", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }) }),
+  cashoutRocket: (telegramId: number, sessionId: number) =>
+    request<ServerRocketGame>("/api/rocket/cashout", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }) }),
   spend: (telegramId: number, amountStars: number, label: string) =>
     request<{ balance_stars: number; balance_ton: number }>("/api/wallet/spend", {
       method: "POST",
@@ -431,6 +477,11 @@ export const api = {
     ),
   adminSettings: (telegramId: number) =>
     request<AdminSettings>(`/api/admin/settings?telegram_id=${telegramId}`),
+  setGlobalReturnFactor: (telegramId: number, factor: number) =>
+    request<{ ok: boolean; global_return_factor: number }>(
+      `/api/admin/settings/global-return-factor?telegram_id=${telegramId}`,
+      { method: "POST", body: JSON.stringify({ factor }) },
+    ),
   setCaseLuck: (telegramId: number, caseId: string, luck: number) =>
     request<{ ok: boolean }>(
       `/api/admin/cases/${encodeURIComponent(caseId)}/luck?telegram_id=${telegramId}`,

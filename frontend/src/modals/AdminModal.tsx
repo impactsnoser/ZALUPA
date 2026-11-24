@@ -5,6 +5,7 @@ import Sheet from "../ui/Sheet";
 
 /** Готовые ступени удачи. Сервер всё равно ограничивает значение MAX_LUCK. */
 const LUCK_STEPS = [1, 1.5, 2, 3, 5];
+const RETURN_STEPS = [1, 0.9, 0.8, 0.7, 0.6, 0.5];
 
 function luckLabel(value: number) {
   return value > 1 ? `×${fmt(value)}` : "обычные";
@@ -23,6 +24,7 @@ export default function AdminModal({
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [cases, setCases] = useState<AdminCaseSetting[]>([]);
   const [maxLuck, setMaxLuck] = useState(5);
+  const [returnFactor, setReturnFactor] = useState(1);
   const [amounts, setAmounts] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,6 +42,7 @@ export default function AdminModal({
       setUsers(found.users);
       setCases(settings.cases);
       setMaxLuck(settings.max_luck);
+      setReturnFactor(settings.global_return_factor);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось открыть админ-панель");
     } finally {
@@ -154,12 +157,50 @@ export default function AdminModal({
     }
   }
 
+  async function applyReturnFactor(factor: number) {
+    setBusy(true);
+    setError("");
+    setNote("");
+    try {
+      const result = await api.setGlobalReturnFactor(telegramId, factor);
+      setReturnFactor(result.global_return_factor);
+      setNote(`Общий коэффициент выплат: ${Math.round(result.global_return_factor * 100)}%. Новые раунды используют это значение.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось изменить общий коэффициент");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const steps = LUCK_STEPS.filter((value) => value <= maxLuck);
 
   return (
     <Sheet title="Админ-панель" onClose={onClose} tall>
       {error && <p className="notice bad">{error}</p>}
       {note && <p className="notice good">{note}</p>}
+
+      <section className="admin-block">
+        <h3 className="admin-title">Общий коэффициент выплат · {Math.round(returnFactor * 100)}%</h3>
+        <p className="fine">
+          Применяется ко всем кейсам, битвам, апгрейду, «Ракетке», «Минам» и зимней шахте.
+          Ниже 100% дорогие призы выпадают реже, а денежные выплаты уменьшаются.
+          Это коэффициент распределения/выплаты, не процент шанса выиграть.
+          Уже начатый раунд сохраняет коэффициент на момент старта.
+        </p>
+        <div className="admin-chips">
+          {RETURN_STEPS.map((factor) => (
+            <button
+              key={factor}
+              type="button"
+              className={`admin-chip${returnFactor === factor ? " active" : ""}`}
+              onClick={() => void applyReturnFactor(factor)}
+              disabled={busy}
+            >
+              {Math.round(factor * 100)}%
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="admin-block">
         <h3 className="admin-title">Игроки</h3>
