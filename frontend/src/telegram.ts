@@ -26,8 +26,8 @@ export function initTelegram(): void {
   if (!tg) return;
   tg.ready();
   tg.expand();
-  tg.setHeaderColor?.("#0b0d1f");
-  tg.setBackgroundColor?.("#0b0d1f");
+  tg.setHeaderColor?.("#050507");
+  tg.setBackgroundColor?.("#050507");
 }
 
 /** В Telegram берём реальный id, в обычном браузере — тестовый. */

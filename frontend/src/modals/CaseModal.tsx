@@ -4,6 +4,7 @@ import { chanceOf, getCase, paybackChance, rtpOf, type Prize } from "../data/cas
 import { fmt, fmtChance, rarityOf } from "../lib/format";
 import { tg } from "../telegram";
 import { Ton } from "../ui/Icons";
+import QuickScroll from "../ui/QuickScroll";
 
 export function PrizeArt({ prize, size = 64 }: { prize: Prize; size?: number }) {
   const [failed, setFailed] = useState(false);
@@ -58,6 +59,7 @@ export default function CaseModal({
   const def = getCase(caseId)!;
   const sorted = useMemo(() => [...def.prizes].sort((a, b) => b.value - a.value), [def]);
   const viewport = useRef<HTMLDivElement>(null);
+  const screen = useRef<HTMLElement>(null);
 
   // Лента строится окном вокруг выбранного приза: он всегда стоит в позиции
   // ACTIVE_AT, поэтому его легко подсветить и отцентрировать.
@@ -79,6 +81,9 @@ export default function CaseModal({
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   const [activeSlot, setActiveSlot] = useState(ACTIVE_AT);
+  // Мульти-открытие: до 5 кейсов за раз.
+  const [qty, setQty] = useState(1);
+  const [bulk, setBulk] = useState<Prize[]>([]);
 
   const centerOffset = (i: number) => i * STEP + ITEM_H / 2 - (viewport.current?.clientHeight ?? 280) / 2;
 
@@ -115,6 +120,7 @@ export default function CaseModal({
     setNeedDeposit(false);
     setError(null);
     setBusy(true);
+    setBulk([]);
 
     // Результат считает сервер: он же списывает ставку и кладёт предмет
     // в инвентарь. Клиент не может подделать приз через консоль.
@@ -165,14 +171,57 @@ export default function CaseModal({
     }, SPIN_MS + 150);
   }
 
+  // Открытие сразу нескольких кейсов: сервер открывает по одному,
+  // поэтому вызываем его последовательно и копим результаты.
+  async function openMany() {
+    if (phase === "spinning" || busy) return;
+    if (balance < def.price * qty) {
+      setNeedDeposit(true);
+      return;
+    }
+    setNeedDeposit(false);
+    setError(null);
+    setBusy(true);
+    setPrize(null);
+    setBulk([]);
+    const got: Prize[] = [];
+    try {
+      for (let i = 0; i < qty; i += 1) {
+        const res = await api.openCase(telegramId, def.id);
+        got.push(res.prize);
+        setBulk([...got]);
+        tg?.HapticFeedback?.impactOccurred("light");
+      }
+      setPhase("done");
+      tg?.HapticFeedback?.notificationOccurred("success");
+      void onCredited();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось открыть кейсы");
+      if (got.length) {
+        setPhase("done");
+        void onCredited();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleBuy() {
+    if (qty > 1) void openMany();
+    else void open();
+  }
+
   const spinning = phase === "spinning";
+  const qtyWord = qty === 1 ? "кейс" : qty >= 5 ? "кейсов" : "кейса";
+  const bulkWord = bulk.length === 1 ? "предмет" : bulk.length >= 5 ? "предметов" : "предмета";
   const diff = prize ? prize.value - def.price : 0;
   const total = sorted.length;
   const topIndex = (selected % total) + 1;
   const bottomIndex = ((selected + 2) % total) + 1;
 
   return (
-    <section className="case-screen" aria-label={def.title}>
+    <section className="case-screen" aria-label={def.title} ref={screen}>
+      <QuickScroll containerRef={screen} />
       <header className="case-screen-head">
         <button className="case-back" onClick={onClose} disabled={spinning} aria-label="Назад">‹</button>
         <span>КЕЙСЫ</span>
@@ -183,6 +232,7 @@ export default function CaseModal({
       </h1>
       {error && <p className="notice bad">{error}</p>}
 
+      {bulk.length === 0 && (
       <div className={`case-showcase${spinning ? " is-spinning" : ""}${phase === "done" ? " is-done" : ""}`} ref={viewport}>
         <span className="showcase-index top">{String(topIndex).padStart(2, "0")}</span>
         <span className="showcase-index bottom">{String(bottomIndex).padStart(2, "0")}</span>
@@ -231,9 +281,27 @@ export default function CaseModal({
           ←
         </button>
       </div>
+      )}
+
+      {bulk.length > 0 && (
+        <div className="bulk-results" aria-live="polite">
+          {bulk.map((p, i) => (
+            <div key={`${p.id}-${i}`} className="bulk-item" data-r={rarityOf(p.value)}>
+              <PrizeArt prize={p} size={56} />
+              <b>{p.name}</b>
+              <small>{fmt(p.value)} TON</small>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="drop-result" aria-live="polite">
-        {prize ? (
+        {bulk.length > 0 ? (
+          <>
+            <strong>Выпало {bulk.length} {bulkWord}</strong>
+            <small>Все предметы добавлены в инвентарь — продать или вывести их можно в профиле.</small>
+          </>
+        ) : prize ? (
           <>
             <strong>{prize.name}</strong>
             <span className={diff >= 0 ? "plus" : "minus"}>
@@ -251,17 +319,40 @@ export default function CaseModal({
         )}
       </div>
 
+      <div className="case-qty" role="group" aria-label="Сколько кейсов открыть за раз">
+        <span>За раз</span>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            className={`qty-chip${qty === n ? " active" : ""}`}
+            onClick={() => setQty(n)}
+            disabled={spinning || busy}
+          >
+            ×{n}
+          </button>
+        ))}
+      </div>
+
       {needDeposit ? (
         <button className="case-buy wide" onClick={onDeposit}>
           Пополнить баланс
         </button>
       ) : (
-        <button className="case-buy wide" onClick={open} disabled={spinning || busy}>
-          {spinning ? "Открываем…" : phase === "done" ? "Открыть ещё раз за" : "Открыть кейс за"}
-          {!spinning && (
+        <button className="case-buy wide" onClick={handleBuy} disabled={spinning || busy}>
+          {busy && qty > 1
+            ? `Открываем ${qty}…`
+            : spinning
+              ? "Открываем…"
+              : qty === 1
+                ? phase === "done" && bulk.length === 0
+                  ? "Открыть ещё раз за"
+                  : "Открыть кейс за"
+                : `Открыть ${qty} ${qtyWord} за`}
+          {!spinning && !(busy && qty > 1) && (
             <>
               <Ton size={16} />
-              {fmt(def.price)}
+              {fmt(def.price * qty)}
             </>
           )}
         </button>

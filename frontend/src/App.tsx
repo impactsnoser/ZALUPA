@@ -194,6 +194,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <div className="edge-glow" aria-hidden="true" />
       <header className="topbar">
         <button className="who" onClick={() => go("profile")} aria-label="Профиль">
           <span className="avatar">{initial}</span>

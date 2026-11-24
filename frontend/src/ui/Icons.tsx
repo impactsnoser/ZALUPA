@@ -1,22 +1,18 @@
 import type { ReactNode } from "react";
-import { useId } from "react";
 
-/** Алмаз TON */
+/** Оригинальный логотип TON (алмаз из public/ton.png). */
 export function Ton({ size = 16, className = "" }: { size?: number; className?: string }) {
-  const id = useId().replace(/:/g, "");
   return (
-    <svg className={className} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <defs>
-        <linearGradient id={`t${id}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#C9F3FF" />
-          <stop offset="0.55" stopColor="#6FD0F5" />
-          <stop offset="1" stopColor="#2E8FD0" />
-        </linearGradient>
-      </defs>
-      <path d="M12 2 21.5 9 12 22 2.5 9z" fill={`url(#t${id})`} />
-      <path d="M12 2 8.4 9H15.6z" fill="#fff" opacity=".55" />
-      <path d="M2.5 9H21.5L12 22z" fill="#1B6FB3" opacity=".28" />
-    </svg>
+    <img
+      className={`ton-icon ${className}`.trim()}
+      src="/ton.png"
+      width={size}
+      height={size}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      style={{ width: size, height: size }}
+    />
   );
 }
 

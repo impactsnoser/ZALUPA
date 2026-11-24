@@ -33,6 +33,7 @@ export default function UpgradeGame() {
   const [fromId, setFromId] = useState<number | null>(null);
   const [toId, setToId] = useState<number | null>(null);
   const [picker, setPicker] = useState<"from" | "to" | null>(null);
+  const [query, setQuery] = useState("");
   const [state, setState] = useState<"ready" | "rolling" | "win" | "lose">("ready");
   const [rotation, setRotation] = useState(0);
   const [result, setResult] = useState<UpgradeResult | null>(null);
@@ -125,7 +126,7 @@ export default function UpgradeGame() {
 
   const slot = (label: string, name: string | null, price: number | null, imageUrl: string | null, hint: string, onClick: () => void, disabled: boolean) => (
     <button className={`slot${name ? " filled" : ""}`} onClick={onClick} disabled={disabled}>
-      <small>{label}</small>
+      <small className="slot-label">{label}</small>
       {name ? (
         <>
           <GiftArt className="slot-art" name={name} imageUrl={imageUrl} />
@@ -142,40 +143,63 @@ export default function UpgradeGame() {
   );
 
   const list = picker === "from" ? fromList : toList;
+  const needle = query.trim().toLocaleLowerCase();
+  const filtered = needle ? list.filter((it) => it.name.toLocaleLowerCase().includes(needle)) : list;
+
+  const stateLabel =
+    rolling ? "Крутим…" : state === "win" ? "Победа" : state === "lose" ? "Не повезло" : toGift ? "Готов к запуску" : "Выбери подарки";
 
   return (
     <div className="upg">
-      <div className={`wheel ${state}`}>
-        <div
-          className="wheel-ring"
-          style={{ background: `conic-gradient(from 0deg, var(--foil) 0deg ${pct * 3.6}deg, rgba(232,52,74,.34) ${pct * 3.6}deg 360deg)` }}
-        >
-          <div className="wheel-core">
-            <b>{rolling ? "…" : state === "win" ? "Победа" : state === "lose" ? "Не вышло" : toGift ? `${fmt(pct)}%` : "Выбери"}</b>
-            <small>{rolling ? "крутим" : toGift || result ? "шанс" : "два подарка"}</small>
+      <div className={`upg-stage ${state}`}>
+        <div className="upg-aura" aria-hidden="true" />
+        <div className={`wheel ${state}`}>
+          <div className="wheel-head">
+            <span className="wheel-kicker">АПГРЕЙД</span>
+            <span className={`wheel-status ${state}`}>{stateLabel}</span>
           </div>
           <div
-            className="wheel-spinner"
-            style={{
-              transform: `rotate(${rotation}deg)`,
-              transition: rolling && result ? `transform ${SPIN_MS}ms cubic-bezier(0.1, 0.72, 0.12, 1)` : "none",
-            }}
+            className="wheel-ring"
+            style={{ background: `conic-gradient(from -90deg, #ffd98a 0deg ${pct * 3.6}deg, rgba(255,59,82,.22) ${pct * 3.6}deg 360deg)` }}
           >
-            <i />
+            <div className="wheel-core">
+              <b>{rolling ? "…" : state === "win" ? "Победа" : state === "lose" ? "Не вышло" : toGift ? `${fmt(pct)}%` : "—"}</b>
+              <small>{rolling ? "крутим" : toGift || result ? "шанс успеха" : "два подарка"}</small>
+            </div>
+            <div
+              className="wheel-spinner"
+              style={{
+                transform: `rotate(${rotation}deg)`,
+                transition: rolling && result ? `transform ${SPIN_MS}ms cubic-bezier(0.1, 0.72, 0.12, 1)` : "none",
+              }}
+            >
+              <i />
+            </div>
           </div>
         </div>
-        {result && !rolling && (
-          <small className="muted">
-            Бросок {(result.roll * 100).toFixed(2).replace(".", ",")}%, нужно меньше {(result.chance * 100).toFixed(2).replace(".", ",")}%
-          </small>
-        )}
       </div>
 
       <div className="swap">
-        {slot("Твой подарок", fromItem?.name ?? null, fromItem?.price_stars ?? null, fromItem?.image_url ?? null, "Выбери из инвентаря", () => setPicker("from"), rolling)}
-        <span className="swap-arrow">→</span>
-        {slot("Хочу получить", toGift?.name ?? null, toGift?.price_stars ?? null, toGift?.image_url ?? null, fromItem ? "Выбери цель" : "Сначала свой", () => setPicker("to"), rolling || !fromItem)}
+        {slot("Твой подарок", fromItem?.name ?? null, fromItem?.price_stars ?? null, fromItem?.image_url ?? null, "Выбери из инвентаря", () => (setQuery(""), setPicker("from")), rolling)}
+        <span className="swap-arrow" aria-hidden="true">⇄</span>
+        {slot("Хочу получить", toGift?.name ?? null, toGift?.price_stars ?? null, toGift?.image_url ?? null, fromItem ? "Выбери цель" : "Сначала свой", () => (setQuery(""), setPicker("to")), rolling || !fromItem)}
       </div>
+
+      {toGift && !result && (
+        <div className="upg-odds">
+          <span>Шанс успеха</span>
+          <div className="upg-bar">
+            <i style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+          </div>
+          <b>{fmt(pct)}%</b>
+        </div>
+      )}
+
+      {result && !rolling && (
+        <small className="upg-roll muted">
+          Бросок {(result.roll * 100).toFixed(2).replace(".", ",")}%, нужно меньше {(result.chance * 100).toFixed(2).replace(".", ",")}%
+        </small>
+      )}
 
       {error && <p className="notice bad">{error}</p>}
       {user && user.inventory.length === 0 && (
@@ -187,35 +211,51 @@ export default function UpgradeGame() {
         </div>
       )}
 
-      <button className="btn primary wide" onClick={upgrade} disabled={!fromItem || !toGift || rolling}>
+      <button className="btn primary wide upg-cta" onClick={upgrade} disabled={!fromItem || !toGift || rolling}>
         {rolling ? "Крутим…" : toGift ? `Улучшить с шансом ${fmt(pct)}%` : "Улучшить"}
       </button>
 
       {picker && (
         <Sheet title={picker === "from" ? "Твой инвентарь" : "Каталог, только дороже"} onClose={() => setPicker(null)}>
-          {list.length === 0 ? (
-            <p className="empty">Ничего нет</p>
+          <div className="pick-tools">
+            <input
+              className="pick-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Быстрый поиск подарка…"
+              inputMode="search"
+            />
+            {query && (
+              <button className="pick-clear" type="button" onClick={() => setQuery("")} aria-label="Очистить">
+                ×
+              </button>
+            )}
+          </div>
+          {filtered.length === 0 ? (
+            <p className="empty">{list.length === 0 ? "Ничего нет" : "Ничего не найдено"}</p>
           ) : (
-            <div className="pick-grid">
-              {list.map((it) => (
-                <button
-                  key={it.key}
-                  className="pick"
-                  onClick={() => {
-                    if (picker === "from") {
-                      setFromId(it.key);
-                      setToId(null);
-                    } else setToId(it.key);
-                    setState("ready");
-                    setResult(null);
-                    setPicker(null);
-                  }}
-                >
-                  <GiftArt className="pick-art" name={it.name} imageUrl={it.imageUrl} />
-                  <b>{it.name}</b>
-                  <em>⭐ {it.price}</em>
-                </button>
-              ))}
+            <div className="pick-scroll">
+              <div className="pick-grid">
+                {filtered.map((it) => (
+                  <button
+                    key={it.key}
+                    className="pick"
+                    onClick={() => {
+                      if (picker === "from") {
+                        setFromId(it.key);
+                        setToId(null);
+                      } else setToId(it.key);
+                      setState("ready");
+                      setResult(null);
+                      setPicker(null);
+                    }}
+                  >
+                    <GiftArt className="pick-art" name={it.name} imageUrl={it.imageUrl} />
+                    <b>{it.name}</b>
+                    <em>⭐ {it.price}</em>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </Sheet>
