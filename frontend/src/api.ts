@@ -263,7 +263,7 @@ export interface BattleRoom {
   balance_ton: number;
 }
 
-async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
+async function requestOnce<T>(path: string, init?: RequestInit, includeTelegramInitData = true): Promise<T> {
   const url = `${API_URL}${path}`;
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -273,10 +273,10 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
     res = await fetch(url, {
       ...init,
       headers: {
-        // Content-Type нужен только для запросов с телом, иначе GET уходит в preflight
-        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        // Не задаём JSON Content-Type форме: browser form-urlencoded POST остаётся simple request.
+        ...(init?.body && !(init.body instanceof URLSearchParams) ? { "Content-Type": "application/json" } : {}),
         // Подпись Telegram: бэкенд проверяет её и не доверяет telegram_id из тела
-        ...(tg?.initData ? { "X-Telegram-Init-Data": tg.initData } : {}),
+        ...(includeTelegramInitData && tg?.initData ? { "X-Telegram-Init-Data": tg.initData } : {}),
         ...(init?.headers as Record<string, string> | undefined),
       },
       signal: init?.signal ?? controller.signal,
@@ -333,13 +333,17 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
  * GET-запросы повторяем один раз: бэкенд на Railway может «просыпаться»
  * и на первый запрос отдать таймаут или HTML-страницу шлюза.
  */
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(
+  path: string,
+  init?: RequestInit,
+  options: { includeTelegramInitData?: boolean } = {},
+): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const attempts = method === "GET" ? 2 : 1;
 
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await requestOnce<T>(path, init);
+      return await requestOnce<T>(path, init, options.includeTelegramInitData !== false);
     } catch (err) {
       const retryable = err instanceof Error && err.name === "NetworkError";
       if (!retryable || attempt >= attempts) throw err;
@@ -371,8 +375,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId }),
     }),
-  upgrade: (body: { telegram_id: number; inventory_ids: number[]; target_gift_id: number }) =>
-    request<UpgradeResult>("/api/upgrade", { method: "POST", body: JSON.stringify(body) }),
+  upgrade: (body: { telegram_id: number; inventory_ids: number[]; target_gift_id: number }) => {
+    const form = new URLSearchParams({
+      telegram_id: String(body.telegram_id),
+      inventory_ids: JSON.stringify(body.inventory_ids),
+      target_gift_id: String(body.target_gift_id),
+      ...(tg?.initData ? { init_data: tg.initData } : {}),
+    });
+    return request<UpgradeResult>("/api/upgrade", { method: "POST", body: form }, { includeTelegramInitData: false });
+  },
   startMines: (telegramId: number, betStars: number, mines: number) =>
     request<ServerMinesGame>("/api/mines/start", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, bet_stars: betStars, mines }) }),
   openMine: (telegramId: number, sessionId: number, cell: number) =>

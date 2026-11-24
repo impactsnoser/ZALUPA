@@ -1,14 +1,16 @@
+import json
 import os
 import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from urllib.parse import parse_qs
 
 from config import SELL_COEF, STARS_PER_TON, WELCOME_STARS
 from game_settings import get_global_return_factor
@@ -440,10 +442,27 @@ async def withdraw_inventory_item(
 
 @app.post("/api/upgrade")
 async def upgrade(
-    req: UpgradeRequest,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     init_data: str | None = Depends(get_init_data),
 ):
+    content_type = request.headers.get("content-type", "")
+    try:
+        if content_type.startswith("application/x-www-form-urlencoded"):
+            values = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
+            payload = {key: items[-1] for key, items in values.items() if items}
+            if "inventory_ids" in payload:
+                payload["inventory_ids"] = json.loads(payload["inventory_ids"])
+        else:
+            payload = await request.json()
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Некорректное тело запроса") from exc
+    try:
+        req = UpgradeRequest.parse_obj(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Некорректные параметры апгрейда") from exc
+
+    init_data = init_data or payload.get("init_data")
     verify_telegram_id(req.telegram_id, init_data)
 
     async with session.begin():
