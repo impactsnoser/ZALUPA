@@ -488,9 +488,6 @@ export default function CaseModal({
           </div>
         ))}
       </div>
-      <p className="fine">
-        Розыгрыш идёт на сервере. Базовый возврат по таблице кейса {rtpOf(def).toFixed(1).replace(".", ",")}%, базовый шанс получить приз не меньше цены кейса {paybackChance(def).toFixed(2).replace(".", ",")}%. Общий коэффициент выплат сейчас {Math.round(globalReturnFactor * 100)}%: при значении ниже 100% дорогие предметы выпадают реже. Это не процент шанса выиграть.
-      </p>
     </section>
   );
 }
