@@ -179,7 +179,7 @@ CASES: list[dict] = [
             {"id": "sheikh-heart", "name": "Сердце", "value": 0.15, "image": "classic-heart.png", "weight": 800, "rarity": 2},
             {"id": "sheikh-rose", "name": "Роза", "value": 0.25, "image": "classic-rose.png", "weight": 150, "rarity": 3},
             {"id": "sheikh-rocket", "name": "Ракета", "value": 0.50, "image": "classic-rocket.png", "weight": 20, "rarity": 4},
-            {"id": "sheikh-champagne", "name": "Шампанское", "value": 0.50, "image": "sheikh-champagne.svg", "weight": 20, "rarity": 5},
+            {"id": "sheikh-champagne", "name": "Шампанское", "value": 0.50, "image": "classic-champagne.png", "weight": 20, "rarity": 5},
             {"id": "sheikh-diamond", "name": "Алмаз", "value": 1.00, "image": "classic-diamond.png", "weight": 4, "rarity": 6},
             {"id": "lunarsnake", "name": "Lunar Snake", "value": 4.77, "image": "lunarsnake.png", "weight": 1, "rarity": 7},
             {"id": "candycane", "name": "Candy Cane", "value": 4.84, "image": "candycane.png", "weight": 1, "rarity": 8},

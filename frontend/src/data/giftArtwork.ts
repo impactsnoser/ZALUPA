@@ -9,7 +9,7 @@ const STANDARD_GIFT_ART: Record<string, string> = {
   "сердце": "classic-heart.png",
   "мишка": "classic-bear.png",
   "алмаз": "classic-diamond.png",
-  "шампанское": "sheikh-champagne.svg",
+  "шампанское": "classic-champagne.png",
 };
 
 export function giftArtworkPath(name: string): string | null {

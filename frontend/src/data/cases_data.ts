@@ -188,7 +188,7 @@ const RAW: { id: string; title: string; price: number; box: string;
       ["sheikh-heart", "Сердце", 0.15, "classic-heart.png", 800, 2],
       ["sheikh-rose", "Роза", 0.25, "classic-rose.png", 150, 3],
       ["sheikh-rocket", "Ракета", 0.50, "classic-rocket.png", 20, 4],
-      ["sheikh-champagne", "Шампанское", 0.50, "sheikh-champagne.svg", 20, 5],
+      ["sheikh-champagne", "Шампанское", 0.50, "classic-champagne.png", 20, 5],
       ["sheikh-diamond", "Алмаз", 1.00, "classic-diamond.png", 4, 6],
       ["lunarsnake", "Lunar Snake", 4.77, "lunarsnake.png", 1, 7],
       ["candycane", "Candy Cane", 4.84, "candycane.png", 1, 8],
