@@ -71,17 +71,21 @@ export default function RocketGame({ balance, onSpend, onWin, onDeposit }: GameP
         {phase === "crashed" && <p className="flight-msg bad">Улетела на {fmt(crashAt)}×</p>}
         {phase === "cashed" && <p className="flight-msg good">Забрал {fmt(bet * mult)}</p>}
       </div>
-      <div className="stepper">
-        <button onClick={() => updateBet(bet - 0.5)} disabled={phase === "running"} aria-label="Меньше ставка">
-          −
-        </button>
-        <label className="bet-value" aria-label="Ставка в TON">
-          <Ton size={16} />
-          {phase === "running" ? <b>{fmt(bet)}</b> : <input type="text" inputMode="decimal" value={betInput} onChange={(event) => editBet(event.target.value)} />}
-        </label>
-        <button onClick={() => updateBet(bet + 0.5)} disabled={phase === "running"} aria-label="Больше ставка">
-          +
-        </button>
+      <div className="rocket-bet-field">
+        <span className="rocket-bet-caption">ТВОЯ СТАВКА · TON</span>
+        <div className="stepper bet-control rocket-bet-stepper">
+          <button onClick={() => updateBet(bet - 0.5)} disabled={phase === "running"} aria-label="Меньше ставка">
+            −
+          </button>
+          <label className="bet-value" aria-label="Ставка в TON">
+            <Ton size={16} />
+            {phase === "running" ? <b>{fmt(bet)}</b> : <input type="text" inputMode="decimal" aria-label="Введите сумму ставки в TON" value={betInput} onChange={(event) => editBet(event.target.value)} />}
+          </label>
+          <button onClick={() => updateBet(bet + 0.5)} disabled={phase === "running"} aria-label="Больше ставка">
+            +
+          </button>
+        </div>
+        <span className="rocket-bet-hint">Нажми на сумму, чтобы изменить</span>
       </div>
       {phase === "running" ? (
         <button className="btn gold wide" onClick={cash}>

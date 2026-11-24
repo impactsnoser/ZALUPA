@@ -474,6 +474,12 @@ audio#secret-track { display: none; }
 .bet-value input { width:58px; min-width:0; padding:0; border:0; outline:0; background:transparent; color:inherit; font:600 14px var(--font-display); text-align:center; }
 .bet-value input:disabled { opacity:.55; }
 .bet-value input::-webkit-inner-spin-button,.snowfall-bet-input input::-webkit-inner-spin-button { margin:0; }
+.rocket-bet-field { display:grid; gap:6px; }
+.rocket-bet-caption { padding-left:4px; color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.12em; }
+.rocket-bet-stepper { height:58px; border-color:rgba(255,205,104,.38); background:linear-gradient(110deg,rgba(255,205,104,.09),var(--felt-2) 42%); box-shadow:inset 0 0 0 1px rgba(255,255,255,.025); }
+.rocket-bet-stepper .bet-value input { width:76px; padding:7px 4px; border:1px solid rgba(255,205,104,.38); border-radius:9px; background:rgba(6,20,17,.48); font-size:16px; }
+.rocket-bet-stepper .bet-value input:focus { border-color:var(--gold); box-shadow:0 0 0 2px rgba(255,205,104,.14); }
+.rocket-bet-hint { padding-left:4px; color:var(--muted); font-size:11px; }
 .deposit-custom-amount { display:grid; gap:6px; color:var(--snow-dim); font-size:12px; }
 .deposit-custom-value { display:flex; align-items:center; gap:9px; min-height:48px; padding:0 14px; border:1px solid rgba(143,227,255,.2); border-radius:14px; background:var(--felt-2); color:var(--snow); }
 .deposit-custom-value input { width:100%; min-width:0; border:0; outline:0; background:transparent; color:inherit; font:600 16px var(--font-display); }
