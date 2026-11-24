@@ -462,6 +462,16 @@ async def upgrade(
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail="Некорректные параметры апгрейда") from exc
 
+    if req.inventory_ids is not None and req.inventory_id is not None:
+        raise HTTPException(status_code=400, detail="Укажите один способ выбора подарков")
+    inventory_ids = (
+        req.inventory_ids
+        if req.inventory_ids is not None
+        else ([req.inventory_id] if req.inventory_id is not None else [])
+    )
+    if not inventory_ids or len(inventory_ids) > 6:
+        raise HTTPException(status_code=422, detail="Выберите от 1 до 6 подарков")
+
     init_data = init_data or payload.get("init_data")
     verify_telegram_id(req.telegram_id, init_data)
 
