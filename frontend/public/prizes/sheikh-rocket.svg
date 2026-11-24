@@ -1,16 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
-  <defs>
-    <linearGradient id="body" x1="39" y1="19" x2="86" y2="101" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF5C5"/><stop offset=".28" stop-color="#FFC94F"/><stop offset=".72" stop-color="#F07A35"/><stop offset="1" stop-color="#B92839"/></linearGradient>
-    <linearGradient id="flame" x1="47" y1="76" x2="71" y2="124" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF4A4"/><stop offset=".55" stop-color="#FF9D32"/><stop offset="1" stop-color="#EF3D55"/></linearGradient>
-    <filter id="shadow" x="11" y="4" width="106" height="124" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feGaussianBlur in="SourceAlpha" stdDeviation="3"/><feOffset dy="3"/><feComponentTransfer><feFuncA type="linear" slope=".32"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  </defs>
-  <g filter="url(#shadow)" stroke-linejoin="round">
-    <path d="M54 81c-3 18-9 26-21 34 0-14 3-25 14-38m24 4c16 7 25 6 40 0-8 13-19 20-37 17" fill="url(#flame)" stroke="#A43A38" stroke-width="3"/>
-    <path d="M52 86c-12 4-24 2-35-6 15-9 25-11 40-6m22-8c9 10 18 13 34 12-10-14-20-21-37-21" fill="#E94B61" stroke="#9C2944" stroke-width="3"/>
-    <path d="M54 81c-15-17-20-37-13-57 4-12 12-21 24-29 11 10 18 21 20 34 4 20-4 39-21 56l-5 5-5-9Z" transform="translate(0 8)" fill="url(#body)" stroke="#8F4A29" stroke-width="3"/>
-    <path d="M62 29c8 0 14 7 14 16s-6 16-14 16-14-7-14-16 6-16 14-16Z" fill="#8FE6EF" stroke="#7C4B32" stroke-width="3"/>
-    <path d="M62 36c4 0 7 4 7 9s-3 9-7 9-7-4-7-9 3-9 7-9Z" fill="#DDFBFF"/>
-    <path d="m36 88 7-11m45 5 10 4" stroke="#FFE09A" stroke-width="4" stroke-linecap="round"/>
-    <path d="m26 27 2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6Zm75 24 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="#FFF4C6"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><image href="/prizes/classic-rocket.png" width="128" height="128" preserveAspectRatio="xMidYMid meet"/></svg>

@@ -1,14 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
-  <defs>
-    <linearGradient id="heart" x1="31" y1="24" x2="94" y2="104" gradientUnits="userSpaceOnUse"><stop stop-color="#FF8294"/><stop offset=".45" stop-color="#F33468"/><stop offset="1" stop-color="#A90D4A"/></linearGradient>
-    <linearGradient id="gold" x1="39" y1="37" x2="90" y2="93" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF1A8"/><stop offset=".5" stop-color="#FFC944"/><stop offset="1" stop-color="#D98218"/></linearGradient>
-    <filter id="shadow" x="9" y="12" width="111" height="109" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feGaussianBlur in="SourceAlpha" stdDeviation="3"/><feOffset dy="3"/><feComponentTransfer><feFuncA type="linear" slope=".35"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  </defs>
-  <g filter="url(#shadow)">
-    <path d="M64 108 22 68C-3 43 30 9 55 32l9 9 9-9c25-23 58 11 33 36L64 108Z" fill="url(#heart)" stroke="#8D1742" stroke-width="4" stroke-linejoin="round"/>
-    <path d="M64 96 32 66c-12-12-6-29 7-32 7-2 14 2 20 8l5 6 6-6c8-8 18-10 26-4 9 7 8 19-1 28L64 96Z" fill="url(#gold)" stroke="#FFF0A2" stroke-width="3" stroke-linejoin="round"/>
-    <path d="m64 53 5 10 11 2-8 8 2 11-10-5-10 5 2-11-8-8 11-2 5-10Z" fill="#FFFCE3" stroke="#D8891E" stroke-width="2" stroke-linejoin="round"/>
-    <path d="M30 49c2-8 8-12 14-11m55 1c5 4 6 9 4 14" stroke="#FFF0F1" stroke-width="4" stroke-linecap="round" opacity=".8"/>
-    <circle cx="27" cy="31" r="4" fill="#FFF3BC"/><circle cx="102" cy="80" r="3" fill="#FFF3BC"/><path d="m96 25 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="#FFF5C5"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><image href="/prizes/classic-heart.png" width="128" height="128" preserveAspectRatio="xMidYMid meet"/></svg>

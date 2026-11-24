@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, MARGIN, type Gift, type UpgradeResult, type UserProfile } from "../api";
 import { GIFTS } from "../data/gifts";
+import { giftArtworkPath } from "../data/giftArtwork";
 import { fmt } from "../lib/format";
 import { getTelegramId, tg } from "../telegram";
 import Sheet from "../ui/Sheet";
@@ -21,7 +22,7 @@ type PickItem = { key: number; name: string; price: number; imageUrl: string | n
 function localGiftImage(name: string): string | null {
   const normalized = name.trim().toLocaleLowerCase();
   const gift = GIFTS.find((entry) => entry.name.trim().toLocaleLowerCase() === normalized);
-  return gift ? `/prizes/${gift.image}` : null;
+  return gift ? `/prizes/${gift.image}` : giftArtworkPath(name);
 }
 
 function GiftArt({ name, imageUrl, className }: { name: string; imageUrl: string | null; className: string }) {

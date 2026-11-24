@@ -333,12 +333,12 @@ class CaseBattle(Base):
 
 SEED_GIFTS = [
     # name, price_stars, image_url, is_nft
-    ("Мишка", 15, "https://example.com/img/bear.png", False),
-    ("Сердце", 25, "https://example.com/img/heart.png", False),
-    ("Подарок", 50, "https://example.com/img/gift.png", False),
-    ("Роза", 100, "https://example.com/img/rose.png", False),
-    ("Торт", 250, "https://example.com/img/cake.png", True),
-    ("Кубок", 500, "https://example.com/img/cup.png", True),
+    ("Мишка", 15, "/prizes/classic-bear.png", False),
+    ("Сердце", 25, "/prizes/classic-heart.png", False),
+    ("Подарок", 50, "/prizes/classic-gift.png", False),
+    ("Роза", 100, "/prizes/classic-rose.png", False),
+    ("Торт", 250, "/prizes/classic-cake.png", True),
+    ("Кубок", 500, "/prizes/classic-cup.png", True),
 ]
 
 
@@ -485,8 +485,12 @@ async def seed_db() -> None:
 
             # Legacy demo gifts remain available for old inventory entries.
             for name, price, image, is_nft in SEED_GIFTS:
-                if name not in gifts_by_name:
+                gift = gifts_by_name.get(name)
+                if gift is None:
                     session.add(Gift(name=name, price_stars=price, image_url=image, is_nft=is_nft))
+                else:
+                    # Заменяем устаревшие заглушки example.com локальными PNG.
+                    gift.image_url = image
             await session.flush()
 
             user = await session.scalar(

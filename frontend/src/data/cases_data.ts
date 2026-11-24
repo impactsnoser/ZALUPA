@@ -184,12 +184,12 @@ const RAW: { id: string; title: string; price: number; box: string;
   {
     id: "poor-sheikh", title: "Бедный шейх", price: 0.35, box: "gold",
     prizes: [
-      ["sheikh-bear", "Мишка", 0.15, "sheikh-bear.svg", 9000, 1],
-      ["sheikh-heart", "Сердце", 0.15, "sheikh-heart.svg", 800, 2],
-      ["sheikh-rose", "Роза", 0.25, "sheikh-rose.svg", 150, 3],
-      ["sheikh-rocket", "Ракета", 0.50, "sheikh-rocket.svg", 20, 4],
+      ["sheikh-bear", "Мишка", 0.15, "classic-bear.png", 9000, 1],
+      ["sheikh-heart", "Сердце", 0.15, "classic-heart.png", 800, 2],
+      ["sheikh-rose", "Роза", 0.25, "classic-rose.png", 150, 3],
+      ["sheikh-rocket", "Ракета", 0.50, "classic-rocket.png", 20, 4],
       ["sheikh-champagne", "Шампанское", 0.50, "sheikh-champagne.svg", 20, 5],
-      ["sheikh-diamond", "Алмаз", 1.00, "sheikh-diamond.svg", 4, 6],
+      ["sheikh-diamond", "Алмаз", 1.00, "classic-diamond.png", 4, 6],
       ["lunarsnake", "Lunar Snake", 4.77, "lunarsnake.png", 1, 7],
       ["candycane", "Candy Cane", 4.84, "candycane.png", 1, 8],
       ["bigyear", "Big Year", 4.82, "bigyear.png", 1, 9],

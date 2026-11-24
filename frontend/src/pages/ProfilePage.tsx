@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type InventoryItem, type SellResult } from "../api";
+import { giftArtworkPath } from "../data/giftArtwork";
 import { fmt } from "../lib/format";
 import { Glyph, Ton } from "../ui/Icons";
 import Sheet from "../ui/Sheet";
@@ -7,6 +8,8 @@ import Sheet from "../ui/Sheet";
 function InventoryArtwork({ item }: { item: InventoryItem }) {
   const [failed, setFailed] = useState(false);
   if (!item.image_url || failed) {
+    const fallbackImage = giftArtworkPath(item.name);
+    if (fallbackImage) return <img src={fallbackImage} alt={item.name} className="inventory-card-img" loading="lazy" />;
     return <span className="inventory-card-emoji">{item.emoji ?? "🎁"}</span>;
   }
   return <img src={item.image_url} alt={item.name} className="inventory-card-img" loading="lazy" onError={() => setFailed(true)} />;
