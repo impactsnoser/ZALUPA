@@ -160,7 +160,7 @@ export default function UpgradeGame() {
           </div>
           <div
             className="wheel-ring"
-            style={{ background: `conic-gradient(from -90deg, #ffd98a 0deg ${pct * 3.6}deg, rgba(255,59,82,.22) ${pct * 3.6}deg 360deg)` }}
+            style={{ background: `conic-gradient(from 0deg, #ffd98a 0deg ${pct * 3.6}deg, rgba(255,59,82,.22) ${pct * 3.6}deg 360deg)` }}
           >
             <div className="wheel-core">
               <b>{rolling ? "…" : state === "win" ? "Победа" : state === "lose" ? "Не вышло" : toGift ? `${fmt(pct)}%` : "—"}</b>
