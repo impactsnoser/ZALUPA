@@ -1,1 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><text x="64" y="96" text-anchor="middle" font-size="92">🍾</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="glass" x1="39" y1="42" x2="92" y2="109" gradientUnits="userSpaceOnUse"><stop stop-color="#B9EF87"/><stop offset=".45" stop-color="#41945A"/><stop offset="1" stop-color="#15533F"/></linearGradient>
+    <linearGradient id="foil" x1="52" y1="9" x2="82" y2="37" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF4A4"/><stop offset=".48" stop-color="#F5B83D"/><stop offset="1" stop-color="#C46A24"/></linearGradient>
+    <filter id="shadow" x="15" y="4" width="98" height="122" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feGaussianBlur in="SourceAlpha" stdDeviation="3"/><feOffset dy="3"/><feComponentTransfer><feFuncA type="linear" slope=".34"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#shadow)" stroke="#164735" stroke-linejoin="round" stroke-width="3">
+    <path d="M50 31h28v20c0 6 4 10 9 16l8 10v33c0 8-6 13-14 13H47c-8 0-14-5-14-13V77l8-10c5-6 9-10 9-16V31Z" fill="url(#glass)"/>
+    <path d="M50 31h28v20c0 6 4 10 9 16l8 10H33l8-10c5-6 9-10 9-16V31Z" fill="#81C76E" stroke="#245D44"/>
+    <path d="M49 18c0-6 5-11 11-11h8c6 0 11 5 11 11v15H49V18Z" fill="url(#foil)" stroke="#9B5B25"/>
+    <path d="M49 38h30v12H49z" fill="#FFE596" stroke="#9B5B25"/>
+    <path d="M43 81h49v20H43z" fill="#F7D879" stroke="#86602D"/>
+    <path d="m57 86 7-5 7 5v9l-7 5-7-5v-9Z" fill="#65D6DC" stroke="#3E8E88" stroke-width="2"/>
+    <path d="M44 43v7c0 11-9 17-13 27m52-34v7c0 11 9 17 13 27" stroke="#D5FFAB" stroke-width="3" opacity=".8"/>
+    <path d="m97 40 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="#FFF2B2" stroke="none"/>
+  </g>
+</svg>

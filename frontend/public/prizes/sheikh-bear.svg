@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><text x="64" y="96" text-anchor="middle" font-size="92">🧸</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="fur" x1="25" y1="19" x2="99" y2="109" gradientUnits="userSpaceOnUse"><stop stop-color="#FFD78A"/><stop offset=".48" stop-color="#D98A42"/><stop offset="1" stop-color="#9C4B27"/></linearGradient>
+    <linearGradient id="muzzle" x1="44" y1="57" x2="81" y2="88" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF1D1"/><stop offset="1" stop-color="#DDAA73"/></linearGradient>
+    <linearGradient id="ribbon" x1="44" y1="88" x2="84" y2="108" gradientUnits="userSpaceOnUse"><stop stop-color="#FF5571"/><stop offset="1" stop-color="#B81448"/></linearGradient>
+    <filter id="shadow" x="8" y="7" width="112" height="119" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feGaussianBlur in="SourceAlpha" stdDeviation="3"/><feOffset dy="3"/><feComponentTransfer><feFuncA type="linear" slope=".35"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#shadow)" stroke="#71391F" stroke-linecap="round" stroke-linejoin="round" stroke-width="3">
+    <path d="M28 37c-8-13 3-25 14-22 8 2 11 10 9 19m26 0c-2-9 1-17 9-19 11-3 22 9 14 22" fill="url(#fur)"/>
+    <path d="M34 36c-3-6 1-11 6-10 4 1 6 5 5 9m35 0c-1-4 1-8 5-9 5-1 9 4 6 10" fill="#F4B77A" stroke-width="2"/>
+    <path d="M22 65c0-25 18-42 42-42s42 17 42 42v24c0 13-9 22-21 22H43c-12 0-21-9-21-22V65Z" fill="url(#fur)"/>
+    <path d="M22 69C9 64 5 74 11 84c4 7 13 8 20 3m75-18c13-5 17 5 11 15-4 7-13 8-20 3" fill="url(#fur)"/>
+    <path d="M41 83c0-12 10-20 23-20s23 8 23 20-10 21-23 21-23-9-23-21Z" fill="url(#muzzle)" stroke-width="2"/>
+    <path d="M56 77c0-3 3-6 8-6s8 3 8 6c0 4-4 7-8 7s-8-3-8-7Z" fill="#67321E" stroke="none"/>
+    <path d="M64 84v5m0 0c-4 4-8 3-10 1m10-1c4 4 8 3 10 1" stroke="#71391F" stroke-width="2"/>
+    <path d="M43 103c-8-4-15 2-13 10 2 7 13 9 24 4m31-14c8-4 15 2 13 10-2 7-13 9-24 4" fill="url(#fur)"/>
+    <path d="m47 91 8-4 9 8 9-8 8 4-4 13-13 5-13-5-4-13Z" fill="url(#ribbon)" stroke="#7C1D39" stroke-width="2"/>
+    <path d="m64 95 4 4-4 4-4-4 4-4Z" fill="#FFD875" stroke="#9A5B28" stroke-width="1.5"/>
+    <circle cx="49" cy="57" r="2.6" fill="#39251F" stroke="none"/><circle cx="79" cy="57" r="2.6" fill="#39251F" stroke="none"/>
+    <path d="M35 42c4-8 11-14 20-17" stroke="#FFE2A7" stroke-width="3" opacity=".75"/>
+  </g>
+</svg>

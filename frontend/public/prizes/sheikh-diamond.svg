@@ -1,1 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><text x="64" y="96" text-anchor="middle" font-size="92">💎</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="stone" x1="28" y1="28" x2="93" y2="100" gradientUnits="userSpaceOnUse"><stop stop-color="#E7FFFF"/><stop offset=".35" stop-color="#83F0F5"/><stop offset=".7" stop-color="#39A9D8"/><stop offset="1" stop-color="#4266C9"/></linearGradient>
+    <linearGradient id="facet" x1="42" y1="44" x2="78" y2="89" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF" stop-opacity=".95"/><stop offset="1" stop-color="#8BEAF6" stop-opacity=".1"/></linearGradient>
+    <filter id="shadow" x="7" y="17" width="114" height="106" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feGaussianBlur in="SourceAlpha" stdDeviation="3"/><feOffset dy="3"/><feComponentTransfer><feFuncA type="linear" slope=".32"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#shadow)" stroke-linejoin="round">
+    <path d="m24 40 16-18h48l16 18-40 66-40-66Z" fill="url(#stone)" stroke="#276A9E" stroke-width="4"/>
+    <path d="m24 40 22 2 18 64-40-66Zm80 0-22 2-18 64 40-66Z" fill="#D8FFFF" fill-opacity=".58" stroke="#4DA8D0" stroke-width="2"/>
+    <path d="m40 22 6 20h36l6-20H40Z" fill="#F7FFFF" fill-opacity=".83" stroke="#62BADA" stroke-width="2"/>
+    <path d="m46 42 18 64 18-64H46Z" fill="url(#facet)" stroke="#53BBD9" stroke-width="2"/>
+    <path d="M30 45h12m46 0h12" stroke="#FFF" stroke-width="3" stroke-linecap="round"/>
+    <path d="m64 7 2 7 7 2-7 2-2 7-2-7-7-2 7-2 2-7Zm42 30 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5ZM21 66l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="#FFF7B8"/>
+  </g>
+</svg>
