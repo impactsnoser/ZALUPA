@@ -283,13 +283,16 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
     });
   } catch (err) {
     const timedOut = (err as Error)?.name === "AbortError";
+    const browserFailure = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    const pageOrigin = typeof window !== "undefined" ? window.location.origin : "unknown";
+    const online = typeof navigator !== "undefined" ? (navigator.onLine ? "online" : "offline") : "unknown";
     const reason = timedOut
       ? `сервер не ответил за ${REQUEST_TIMEOUT_MS / 1000} c (возможно, просыпается после простоя)`
-      : "запрос заблокирован или сервер недоступен";
-    console.error(`[api] ${url} — ${reason}`, err);
+      : `сбой запроса (${browserFailure})`;
+    console.error(`[api] ${url} — ${reason}; origin=${pageOrigin}; online=${online}`, err);
     const error = new Error(
       `Нет связи с API: ${API_URL} (${reason}). ` +
-        "Проверьте, что бэкенд запущен и доступен по HTTPS.",
+        `Страница: ${pageOrigin}; сеть браузера: ${online}.`,
     );
     error.name = "NetworkError";
     throw error;
