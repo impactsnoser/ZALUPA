@@ -201,7 +201,12 @@ export interface StarterResult {
   is_nft: boolean;
 }
 
-export interface BattleCase { id: string; title: string; price: number }
+export interface BattleCase {
+  id: string;
+  title: string;
+  price: number;
+  prizes?: { name: string; value: number; image_url: string }[];
+}
 export interface BattleRoom {
   battle_id: string;
   status: "waiting" | "completed" | "expired" | "cancelled";
@@ -211,6 +216,7 @@ export interface BattleRoom {
   creator_username: string;
   opponent_username: string | null;
   expires_at: number;
+  reveal_at: number | null;
   result: {
     you: { name: string; value_stars: number; image_url: string | null } | null;
     opponent: { name: string; value_stars: number; image_url: string | null } | null;

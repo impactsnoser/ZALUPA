@@ -502,6 +502,17 @@ audio#secret-track { display: none; }
 .battle-result { display:grid; gap:10px; text-align:center; }
 .battle-result > p { margin:0; font-size:12px; }
 .battle-versus { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:4px 0; }
+.battle-opening { overflow:hidden; }
+.battle-reel-card { display:grid; align-content:start; gap:7px; min-width:0; padding:10px 7px; border:1px solid var(--line); border-radius:16px; background:rgba(5,20,16,.38); }
+.battle-reel-card > label { overflow:hidden; color:var(--snow-dim); font-size:9px; font-weight:800; letter-spacing:.1em; text-overflow:ellipsis; white-space:nowrap; }
+.battle-reel-window { height:80px; overflow:hidden; border-radius:11px; mask-image:linear-gradient(transparent,#000 12%,#000 88%,transparent); }
+.battle-reel-track { display:grid; gap:8px; animation:battle-reel-spin var(--reel-duration) cubic-bezier(.12,.68,.16,1) forwards; }
+.battle-reel-item { display:grid; grid-template-columns:38px minmax(0,1fr); grid-template-rows:1fr 1fr; align-items:center; column-gap:7px; height:72px; padding:6px; border:1px solid rgba(255,210,122,.14); border-radius:11px; background:linear-gradient(135deg,rgba(242,184,75,.11),rgba(255,255,255,.025)); text-align:left; }
+.battle-reel-item img { grid-row:1 / 3; width:38px; height:48px; object-fit:contain; }
+.battle-reel-item span { overflow:hidden; align-self:end; color:var(--snow); font-size:10px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+.battle-reel-item small { align-self:start; color:var(--gold); font-size:9px; }
+@keyframes battle-reel-spin { to { transform:translateY(var(--reel-end)); } }
+@media (prefers-reduced-motion: reduce) { .battle-reel-track { animation-duration:250ms !important; } }
 .battle-prize { display:grid; justify-items:center; gap:7px; min-width:0; padding:12px 6px; border:1px solid var(--line); border-radius:16px; background:rgba(5,20,16,.38); }
 .battle-prize img,.battle-prize > span { display:grid; place-items:center; width:68px; height:68px; object-fit:contain; font-size:36px; }
 .battle-prize b { overflow:hidden; max-width:100%; color:var(--snow); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }

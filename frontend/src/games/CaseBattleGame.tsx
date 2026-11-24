@@ -1,9 +1,43 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { api, type BattleCase, type BattleRoom } from "../api";
 import { fmt } from "../lib/format";
 import { Ton } from "../ui/Icons";
 
 type LobbyRoom = { battle_id: string; username: string; case: BattleCase; bet_stars: number; bet_ton: number; expires_at: number };
+
+function reelItems(battleId: string, playerIndex: number, battleCase: BattleCase, result: NonNullable<BattleRoom["result"]>["you"]) {
+  const previews = battleCase.prizes ?? [];
+  if (!result || previews.length === 0) return [];
+  const seed = [...battleId].reduce((total, char) => total + char.charCodeAt(0), playerIndex * 29);
+  const spins = Array.from({ length: 18 }, (_, index) => previews[(seed + index * 7) % previews.length]);
+  return [...spins, result];
+}
+
+function BattleReel({ battle, prize, playerIndex, label, duration }: {
+  battle: BattleRoom; prize: NonNullable<BattleRoom["result"]>["you"]; playerIndex: number; label: string; duration: number;
+}) {
+  const items = reelItems(battle.battle_id, playerIndex, battle.case, prize);
+  const reelStyle = {
+    "--reel-end": `${-Math.max(0, items.length - 1) * 80}px`,
+    "--reel-duration": `${Math.max(250, duration)}ms`,
+  } as CSSProperties;
+  return (
+    <div className="battle-reel-card">
+      <label>{label}</label>
+      <div className="battle-reel-window">
+        <div className="battle-reel-track" style={reelStyle}>
+          {items.map((item, index) => (
+            <div className="battle-reel-item" key={`${item.name}-${index}`}>
+              <img src={item.image_url ?? ""} alt="" />
+              <span>{item.name}</span>
+              <small>{fmt("value_stars" in item ? item.value_stars : Math.round(item.value * 100))} ⭐</small>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onChanged }: {
   telegramId: number; starsPerTon: number; onDeposit: () => void; onChanged: () => void;
@@ -14,6 +48,7 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
   const [battle, setBattle] = useState<BattleRoom | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [revealedBattleId, setRevealedBattleId] = useState<string | null>(null);
 
   const refreshLobby = useCallback(async () => {
     try {
@@ -51,9 +86,17 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
         setBattle(updated);
         if (updated.status !== "waiting") onChanged();
       }).catch((err: unknown) => setError(err instanceof Error ? err.message : "Не удалось обновить битву"));
-    }, 1800);
+    }, 650);
     return () => window.clearInterval(timer);
   }, [battle?.battle_id, battle?.status, telegramId, onChanged]);
+
+  useEffect(() => {
+    if (!battle || battle.status !== "completed" || !battle.result) return;
+    setRevealedBattleId(null);
+    const delay = Math.max(0, (battle.reveal_at ?? Date.now()) - Date.now());
+    const timer = window.setTimeout(() => setRevealedBattleId(battle.battle_id), delay);
+    return () => window.clearTimeout(timer);
+  }, [battle?.battle_id, battle?.status, battle?.reveal_at, battle?.result]);
 
   async function act(action: () => Promise<BattleRoom>) {
     setBusy(true);
@@ -108,7 +151,19 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
         )}
       </section>
 
-      {battle?.status === "completed" && battle.result && (
+      {battle?.status === "completed" && battle.result && revealedBattleId !== battle.battle_id && (
+        <section className="battle-result battle-opening">
+          <div className="battle-eyebrow">🎁 ОТКРЫВАЕМ КЕЙСЫ</div>
+          <h3>Оба игрока открывают призы</h3>
+          <div className="battle-versus">
+            <BattleReel battle={battle} prize={battle.result.you} playerIndex={0} label="ТЫ" duration={(battle.reveal_at ?? Date.now()) - Date.now()} />
+            <BattleReel battle={battle} prize={battle.result.opponent} playerIndex={1} label={battle.result.opponent_username} duration={(battle.reveal_at ?? Date.now()) - Date.now()} />
+          </div>
+          <p className="muted">Сравниваем выпавшие подарки…</p>
+        </section>
+      )}
+
+      {battle?.status === "completed" && battle.result && revealedBattleId === battle.battle_id && (
         <section className={`battle-result${battle.result.won ? " winner" : ""}`}>
           <div className="battle-eyebrow">{battle.result.draw ? "НИЧЬЯ" : battle.result.won ? "ПОБЕДА!" : "В ЭТОТ РАЗ НЕ ПОВЕЗЛО"}</div>
           <h3>{battle.result.draw ? "Каждый оставил свой приз" : battle.result.won ? "Ты забрал оба подарка" : `${battle.result.winner_username ?? "Соперник"} победил`}</h3>

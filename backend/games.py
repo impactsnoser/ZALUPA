@@ -201,8 +201,17 @@ def _battle_prize_item(user_id: int, prize: dict) -> InventoryItem:
     )
 
 
-def _battle_card(case: dict) -> dict:
-    return {"id": case["id"], "title": case["title"], "price": case["price"]}
+def _battle_card(case: dict, *, with_previews: bool = False) -> dict:
+    card = {"id": case["id"], "title": case["title"], "price": case["price"]}
+    if with_previews:
+        prizes = case["prizes"]
+        count = min(12, len(prizes))
+        indexes = {round(i * (len(prizes) - 1) / max(1, count - 1)) for i in range(count)}
+        card["prizes"] = [
+            {"name": prizes[i]["name"], "value": prizes[i]["value"], "image_url": f"/prizes/{prizes[i]['image']}"}
+            for i in sorted(indexes)
+        ]
+    return card
 
 
 async def _battle_view(session: AsyncSession, battle: CaseBattle, viewer_id: int) -> dict:
@@ -240,12 +249,14 @@ async def _battle_view(session: AsyncSession, battle: CaseBattle, viewer_id: int
     return {
         "battle_id": battle.id,
         "status": battle.status,
-        "case": _battle_card(case),
+        "case": _battle_card(case, with_previews=battle.status == "completed"),
         "bet_stars": battle.bet_stars,
         "bet_ton": stars_to_ton(battle.bet_stars),
         "creator_username": owner.username if owner and owner.username else "Игрок",
         "opponent_username": opponent.username if opponent and opponent.username else None,
         "expires_at": battle.expires_at,
+        "reveal_at": int(battle.finished_at.replace(tzinfo=battle.finished_at.tzinfo or timezone.utc).timestamp() * 1000) + 3200
+        if battle.status == "completed" and battle.finished_at else None,
         "result": result,
         "balance_stars": viewer.balance_stars if viewer else 0,
         "balance_ton": stars_to_ton(viewer.balance_stars) if viewer else 0,
