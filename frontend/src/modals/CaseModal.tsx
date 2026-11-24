@@ -31,6 +31,12 @@ const WIN_AT = 12;
 const SPIN_START_AT = 38;
 const ACTIVE_AT = 2;
 const SPIN_MS = 3600;
+const BULK_SPIN_MS = 3200;
+const BULK_REEL_LEN = 23;
+const BULK_WIN_AT = 19;
+const BULK_ITEM_H = 64;
+const BULK_GAP = 6;
+const BULK_STEP = BULK_ITEM_H + BULK_GAP;
 
 type Phase = "idle" | "spinning" | "done";
 
@@ -43,6 +49,34 @@ type OpenCaseResponse = {
   balance_stars: number;
   balance_ton: number;
 };
+
+function BulkReel({ prize, sorted, reelIndex }: { prize: Prize; sorted: Prize[]; reelIndex: number }) {
+  const items = useMemo(() => Array.from({ length: BULK_REEL_LEN }, (_, index) =>
+    index === BULK_WIN_AT ? prize : sorted[(index * 7 + reelIndex * 11) % sorted.length],
+  ), [prize, reelIndex, sorted]);
+  return (
+    <div className="bulk-reel" data-r={rarityOf(prize.value)}>
+      <div className="bulk-reel-window">
+        <div className="bulk-reel-track" style={{ ["--bulk-reel-end" as string]: `${-(BULK_WIN_AT * BULK_STEP - 8)}px` }}>
+          {items.map((item, index) => (
+            <div className="bulk-reel-item" key={`${item.id}-${index}`} style={{ height: BULK_ITEM_H, marginBottom: BULK_GAP }}>
+              <PrizeArt prize={item} size={42} />
+              <b>{item.name}</b>
+              <small>{fmt(item.value)} TON</small>
+            </div>
+          ))}
+        </div>
+        <span className="bulk-reel-marker" aria-hidden="true" />
+      </div>
+    </div>
+  );
+}
+
+function BulkReelPlaceholders({ count }: { count: number }) {
+  return <div className="bulk-reels is-loading" aria-label={`Подготавливаем ${count} рулетки`}>
+    {Array.from({ length: count }, (_, index) => <div key={index} className="bulk-reel-placeholder"><span>🎁</span><small>Открываем</small></div>)}
+  </div>;
+}
 
 export default function CaseModal({
   caseId,
@@ -87,6 +121,7 @@ export default function CaseModal({
   // Мульти-открытие: до 5 кейсов за раз.
   const [qty, setQty] = useState(1);
   const [bulk, setBulk] = useState<Prize[]>([]);
+  const [bulkSpinning, setBulkSpinning] = useState(false);
   const [openedInventoryId, setOpenedInventoryId] = useState<number | null>(null);
   const [sellValueStars, setSellValueStars] = useState(0);
   const [soldStars, setSoldStars] = useState<number | null>(null);
@@ -195,27 +230,33 @@ export default function CaseModal({
     setNeedDeposit(false);
     setError(null);
     setBusy(true);
+    setPhase("spinning");
     setPrize(null);
     setBulk([]);
+    setBulkSpinning(false);
     const got: Prize[] = [];
+    const animateResults = (results: Prize[]) => {
+      setBulk(results);
+      setBulkSpinning(true);
+      window.setTimeout(() => {
+        setBulkSpinning(false);
+        setPhase("done");
+        setBusy(false);
+        tg?.HapticFeedback?.notificationOccurred("success");
+        void onCredited();
+      }, BULK_SPIN_MS + 100);
+    };
     try {
       for (let i = 0; i < qty; i += 1) {
         const res = await api.openCase(telegramId, def.id);
         got.push(res.prize);
-        setBulk([...got]);
         tg?.HapticFeedback?.impactOccurred("light");
       }
-      setPhase("done");
-      tg?.HapticFeedback?.notificationOccurred("success");
-      void onCredited();
+      animateResults(got);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось открыть кейсы");
-      if (got.length) {
-        setPhase("done");
-        void onCredited();
-      }
-    } finally {
-      setBusy(false);
+      if (got.length) animateResults(got);
+      else { setPhase("idle"); setBusy(false); }
     }
   }
 
@@ -247,6 +288,7 @@ export default function CaseModal({
   const total = sorted.length;
   const topIndex = (selected % total) + 1;
   const bottomIndex = ((selected + 2) % total) + 1;
+  const showBulkLoading = qty > 1 && busy && bulk.length === 0;
 
   return (
     <section className="case-screen" aria-label={def.title} ref={screen}>
@@ -261,7 +303,7 @@ export default function CaseModal({
       </h1>
       {error && <p className="notice bad">{error}</p>}
 
-      {bulk.length === 0 && (
+      {bulk.length === 0 && !showBulkLoading && (
       <div className={`case-showcase${spinning ? " is-spinning" : ""}${phase === "done" ? " is-done" : ""}`} ref={viewport}>
         <span className="showcase-index top">{String(topIndex).padStart(2, "0")}</span>
         <span className="showcase-index bottom">{String(bottomIndex).padStart(2, "0")}</span>
@@ -312,7 +354,18 @@ export default function CaseModal({
       </div>
       )}
 
-      {bulk.length > 0 && (
+      {showBulkLoading && <BulkReelPlaceholders count={qty} />}
+
+      {bulk.length > 0 && bulkSpinning && (
+        <div className="bulk-opening" aria-live="polite">
+          <strong>Открываем {bulk.length} кейсов</strong>
+          <div className="bulk-reels">
+            {bulk.map((p, i) => <BulkReel key={`${p.id}-${i}`} prize={p} sorted={sorted} reelIndex={i} />)}
+          </div>
+        </div>
+      )}
+
+      {bulk.length > 0 && !bulkSpinning && (
         <div className="bulk-results" aria-live="polite">
           {bulk.map((p, i) => (
             <div key={`${p.id}-${i}`} className="bulk-item" data-r={rarityOf(p.value)}>
@@ -325,7 +378,11 @@ export default function CaseModal({
       )}
 
       <div className="drop-result" aria-live="polite">
-        {bulk.length > 0 ? (
+        {showBulkLoading ? (
+          <strong>Готовим {qty} рулетки…</strong>
+        ) : bulk.length > 0 && bulkSpinning ? (
+          <strong>Каждый кейс открывается…</strong>
+        ) : bulk.length > 0 ? (
           <>
             <strong>Выпало {bulk.length} {bulkWord}</strong>
             <small>Все предметы добавлены в инвентарь — продать или вывести их можно в профиле.</small>

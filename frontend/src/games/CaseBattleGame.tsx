@@ -136,7 +136,7 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
 
   return (
     <div className="stack case-battle">
-      <section className="battle-panel">
+      {battle?.status !== "completed" && <section className="battle-panel">
         <div className="battle-eyebrow">⚔️ ИГРА ПРОТИВ ЧЕЛОВЕКА</div>
         <h3>Битва кейсов</h3>
         <p className="muted">Выбери кейс. Оба игрока оплачивают его цену и открывают одновременно. Победитель забирает оба подарка, при ничьей каждый оставляет свой.</p>
@@ -164,7 +164,7 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
             <button className="btn secondary wide" disabled={busy} onClick={() => void act(() => api.cancelBattle(telegramId, battle.battle_id))}>Отменить и вернуть ставку</button>
           </div>
         )}
-      </section>
+      </section>}
 
       {battle?.status === "completed" && battle.result && revealedBattleId !== battle.battle_id && (
         <section className="battle-result battle-opening">
