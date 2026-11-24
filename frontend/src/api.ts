@@ -24,6 +24,15 @@ declare global {
 }
 
 function resolveApiUrl(): string {
+  // Telegram WebViews on some devices fail cross-origin fetches to the API
+  // even when preflight/CORS are valid. Railway frontend proxies /api to the
+  // backend, so use that same origin in the Mini App.
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname === "sublime-dream-production-94c24379.up.railway.app"
+  ) {
+    return "";
+  }
   const fromWindow = typeof window !== "undefined" ? window.__NEXORA_API_URL__ : undefined;
   const raw = (fromWindow || import.meta.env.VITE_API_URL || "").trim();
   if (raw) return raw.replace(/\/+$/, "");
