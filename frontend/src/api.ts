@@ -227,6 +227,8 @@ export interface UpgradeResult {
   roll: number; // 0..1, победа если roll < chance
   chance: number; // 0..1
   new_inventory_id: number | null;
+  consumed_count?: number;
+  reward: Pick<Gift, "name" | "price_stars" | "image_url" | "is_nft"> | null;
 }
 
 export interface RegisterResult {
@@ -384,11 +386,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ telegram_id: telegramId }),
     }),
-  upgrade: (body: { telegram_id: number; inventory_ids: number[]; target_gift_id: number }) => {
+  upgrade: (body: { telegram_id: number; inventory_ids: number[]; target_gift_id?: number; mystery?: boolean }) => {
     const form = new URLSearchParams({
       telegram_id: String(body.telegram_id),
       inventory_ids: JSON.stringify(body.inventory_ids),
-      target_gift_id: String(body.target_gift_id),
+      ...(body.target_gift_id !== undefined ? { target_gift_id: String(body.target_gift_id) } : {}),
+      ...(body.mystery ? { mystery: "true" } : {}),
       ...(tg?.initData ? { init_data: tg.initData } : {}),
     });
     return request<UpgradeResult>("/api/upgrade", { method: "POST", body: form }, { includeTelegramInitData: false });

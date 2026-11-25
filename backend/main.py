@@ -66,7 +66,8 @@ class UpgradeRequest(BaseModel):
     inventory_ids: list[int] | None = Field(default=None, min_length=1, max_length=6)
     # Backward compatibility with previously cached Mini App clients.
     inventory_id: int | None = None
-    target_gift_id: int
+    target_gift_id: int | None = None
+    mystery: bool = False
 
 
 class RegisterRequest(BaseModel):
@@ -503,10 +504,6 @@ async def upgrade(
         if len(items) != len(inventory_ids):
             raise HTTPException(status_code=404, detail="Один или несколько подарков не найдены в инвентаре")
 
-        target = await session.get(Gift, req.target_gift_id)
-        if target is None:
-            raise HTTPException(status_code=404, detail="Целевой подарок не найден")
-
         source_gifts: list[Gift] = []
         from_price = 0
         for item in items:
@@ -523,13 +520,33 @@ async def upgrade(
             item_price = item.prize_value_stars if item.gift is None and item.prize_value_stars is not None else source_gift.price_stars
             from_price += item_price
 
+        if req.mystery:
+            if req.target_gift_id is not None:
+                raise HTTPException(status_code=400, detail="Для мистери-апгрейда цель выбирается автоматически")
+            targets = list(await session.scalars(
+                select(Gift)
+                .where(Gift.is_nft.is_(True))
+                .order_by(Gift.id)
+            ))
+            if not targets:
+                raise HTTPException(status_code=400, detail="В каталоге пока нет NFT для мистери-апгрейда")
+            target = secrets.choice(targets)
+        else:
+            if req.target_gift_id is None:
+                raise HTTPException(status_code=422, detail="Выберите целевой подарок")
+            target = await session.get(Gift, req.target_gift_id)
+            if target is None:
+                raise HTTPException(status_code=404, detail="Целевой подарок не найден")
+
         to_price = target.price_stars
-        if to_price <= from_price:
+        if to_price <= from_price and not req.mystery:
             raise HTTPException(
                 status_code=400, detail="Целевой подарок должен быть дороже общей стоимости ставки"
             )
 
         chance = (from_price / to_price) * MARGIN_COEF * await get_global_return_factor(session)
+        if req.mystery:
+            chance = min(1.0, chance)
         roll = secrets.randbelow(RNG_PRECISION) / RNG_PRECISION  # [0, 1)
         is_win = roll < chance
 
@@ -560,6 +577,12 @@ async def upgrade(
         "chance": round(chance, 6),  # шанс 0..1
         "new_inventory_id": new_inventory_id,
         "consumed_count": len(items),
+        "reward": {
+            "name": target.name,
+            "price_stars": target.price_stars,
+            "image_url": target.image_url,
+            "is_nft": bool(target.is_nft),
+        } if is_win else None,
     }
 
 

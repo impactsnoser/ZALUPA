@@ -8,6 +8,13 @@ import Sheet from "../ui/Sheet";
 
 const EMOJI: Record<string, string> = { Мишка: "🧸", Сердце: "💖", Подарок: "🎁", Роза: "🌹", Торт: "🎂", Кубок: "🏆" };
 const SPIN_MS = 5000;
+const MYSTERY_QUESTIONS = [
+  { left: 8, top: 9, size: 35, delay: 0.1 }, { left: 76, top: 6, size: 26, delay: 1.1 },
+  { left: 91, top: 22, size: 39, delay: 0.6 }, { left: 4, top: 31, size: 28, delay: 1.6 },
+  { left: 82, top: 43, size: 32, delay: 0.9 }, { left: 10, top: 56, size: 42, delay: 1.8 },
+  { left: 93, top: 67, size: 27, delay: 0.3 }, { left: 23, top: 81, size: 29, delay: 1.3 },
+  { left: 70, top: 89, size: 37, delay: 0.7 }, { left: 45, top: 3, size: 24, delay: 1.9 },
+];
 
 function giftsWord(count: number): string {
   const mod10 = count % 10;
@@ -41,6 +48,7 @@ export default function UpgradeGame() {
   const [loadError, setLoadError] = useState("");
   const [fromIds, setFromIds] = useState<number[]>([]);
   const [toId, setToId] = useState<number | null>(null);
+  const [mode, setMode] = useState<"normal" | "mystery">("normal");
   const [picker, setPicker] = useState<"from" | "to" | null>(null);
   const [query, setQuery] = useState("");
   const [state, setState] = useState<"ready" | "rolling" | "win" | "lose">("ready");
@@ -96,19 +104,32 @@ export default function UpgradeGame() {
   const fromValue = fromItems.reduce((sum, item) => sum + item.price_stars, 0);
   const firstFromItem = fromItems[0] ?? null;
   const toGift = fromItems.length > 0 && toId !== null ? (gifts.find((g) => g.id === toId && g.price_stars > fromValue) ?? null) : null;
-  const preview = firstFromItem && toGift ? (fromValue / toGift.price_stars) * MARGIN * returnFactor : 0;
+  const mysteryTargets = gifts.filter((gift) => gift.is_nft);
+  const mysteryPreview = mysteryTargets.length > 0
+    ? mysteryTargets.reduce((sum, gift) => sum + Math.min(1, (fromValue / gift.price_stars) * MARGIN * returnFactor), 0) / mysteryTargets.length
+    : 0;
+  const preview = mode === "mystery"
+    ? mysteryPreview
+    : firstFromItem && toGift ? (fromValue / toGift.price_stars) * MARGIN * returnFactor : 0;
   const chance = result ? result.chance : preview;
   const pct = chance * 100;
   const rolling = state === "rolling";
+  const canUpgrade = fromItems.length > 0 && (mode === "mystery" ? mysteryTargets.length > 0 : Boolean(toGift));
+  const ringRest = mode === "mystery" ? "rgba(211, 180, 255, .16)" : "rgba(255,59,82,.22)";
+  const ringFill = mode === "mystery" ? "#cf9cff" : "#ffd98a";
 
   async function upgrade() {
-    if (fromItems.length === 0 || !toGift || rolling) return;
+    if (!canUpgrade || rolling || (mode === "normal" && !toGift)) return;
     setError("");
     setResult(null);
     setState("rolling");
     tg?.HapticFeedback?.impactOccurred("medium");
     try {
-      const res = await api.upgrade({ telegram_id: telegramId, inventory_ids: fromIds, target_gift_id: toGift.id });
+      const res = await api.upgrade({
+        telegram_id: telegramId,
+        inventory_ids: fromIds,
+        ...(mode === "mystery" ? { mystery: true } : { target_gift_id: toGift!.id }),
+      });
       setResult(res);
       setRotation((prev) => Math.ceil(prev / 360) * 360 + 360 * 5 + res.roll * 360);
       await new Promise((r) => window.setTimeout(r, SPIN_MS + 250));
@@ -163,24 +184,35 @@ export default function UpgradeGame() {
   const filtered = needle ? list.filter((it) => it.name.toLocaleLowerCase().includes(needle)) : list;
 
   const stateLabel =
-    rolling ? "Крутим…" : state === "win" ? "Победа" : state === "lose" ? "Не повезло" : toGift ? "Готов к запуску" : "Выбери подарки";
+    rolling ? "Крутим…" : state === "win" ? "Победа" : state === "lose" ? "Не повезло" : mode === "mystery" ? (mysteryTargets.length ? "NFT выберется случайно" : "Каталог NFT пуст") : toGift ? "Готов к запуску" : "Выбери подарки";
 
   return (
-    <div className="upg">
+    <div className={`upg${mode === "mystery" ? " upg-mystery" : ""}`}>
+      {mode === "mystery" && (
+        <div className="mystery-questions" aria-hidden="true">
+          {MYSTERY_QUESTIONS.map((question, index) => (
+            <span key={index} style={{ left: `${question.left}%`, top: `${question.top}%`, fontSize: question.size, animationDelay: `${-question.delay}s` }}>?</span>
+          ))}
+        </div>
+      )}
+      <div className="upg-mode-switch" role="tablist" aria-label="Режим апгрейда">
+        <button type="button" role="tab" aria-selected={mode === "normal"} className={mode === "normal" ? "active" : ""} disabled={rolling} onClick={() => { setMode("normal"); setResult(null); setState("ready"); setError(""); }}>Обычный</button>
+        <button type="button" role="tab" aria-selected={mode === "mystery"} className={mode === "mystery" ? "active" : ""} disabled={rolling} onClick={() => { setMode("mystery"); setToId(null); setResult(null); setState("ready"); setError(""); }}>Мистери</button>
+      </div>
       <div className={`upg-stage ${state}`}>
         <div className="upg-aura" aria-hidden="true" />
         <div className={`wheel ${state}`}>
           <div className="wheel-head">
-            <span className="wheel-kicker">АПГРЕЙД</span>
+            <span className="wheel-kicker">{mode === "mystery" ? "MYSTERY UPGRADE" : "АПГРЕЙД"}</span>
             <span className={`wheel-status ${state}`}>{stateLabel}</span>
           </div>
           <div
             className="wheel-ring"
-            style={{ background: `conic-gradient(from 0deg, #ffd98a 0deg ${pct * 3.6}deg, rgba(255,59,82,.22) ${pct * 3.6}deg 360deg)` }}
+            style={{ background: `conic-gradient(from 0deg, ${ringFill} 0deg ${pct * 3.6}deg, ${ringRest} ${pct * 3.6}deg 360deg)` }}
           >
             <div className="wheel-core">
-              <b>{rolling ? "…" : state === "win" ? "Победа" : state === "lose" ? "Не вышло" : toGift ? `${fmt(pct)}%` : "—"}</b>
-              <small>{rolling ? "крутим" : toGift || result ? "шанс успеха" : "два подарка"}</small>
+              <b>{rolling ? "…" : state === "win" ? "Победа" : state === "lose" ? "Не вышло" : canUpgrade ? `${fmt(pct)}%` : mode === "mystery" && fromItems.length ? "—" : "?"}</b>
+              <small>{rolling ? "крутим" : canUpgrade || result ? (mode === "mystery" ? "средний шанс" : "шанс успеха") : mode === "mystery" ? "выбери ставку" : "два подарка"}</small>
             </div>
             <div
               className="wheel-spinner"
@@ -198,20 +230,46 @@ export default function UpgradeGame() {
       <div className="swap">
         {slot(`Твои подарки · ${fromItems.length}/6`, fromItems.length ? (fromItems.length === 1 ? firstFromItem!.name : `${fromItems.length} подарков выбрано`) : null, fromItems.length ? fromValue : null, firstFromItem?.image_url ?? null, "Выбери до 6 из инвентаря", () => (setQuery(""), setPicker("from")), rolling)}
         <span className="swap-arrow" aria-hidden="true">⇄</span>
-        {slot("Хочу получить", toGift?.name ?? null, toGift?.price_stars ?? null, toGift?.image_url ?? null, fromItems.length ? "Выбери цель дороже ставки" : "Сначала выбери подарки", () => (setQuery(""), setPicker("to")), rolling || fromItems.length === 0)}
+        {mode === "mystery" ? (
+          <div className={`slot mystery-target${result?.win && result.reward ? " revealed" : ""}`}>
+            <small className="slot-label">СЛУЧАЙНАЯ ЦЕЛЬ</small>
+            {result?.win && result.reward ? (
+              <>
+                <GiftArt className="slot-art" name={result.reward.name} imageUrl={result.reward.image_url} />
+                <b>{result.reward.name}</b>
+                <em>⭐ {fmt(result.reward.price_stars)}</em>
+              </>
+            ) : (
+              <>
+                <span className="mystery-target-mark">?</span>
+                <b>{state === "lose" ? "Не выпало" : "Любой NFT"}</b>
+                <em>{mysteryTargets.length} NFT в пуле</em>
+              </>
+            )}
+          </div>
+        ) : slot("Хочу получить", toGift?.name ?? null, toGift?.price_stars ?? null, toGift?.image_url ?? null, fromItems.length ? "Выбери цель дороже ставки" : "Сначала выбери подарки", () => (setQuery(""), setPicker("to")), rolling || fromItems.length === 0)}
       </div>
 
-      {toGift && !result && (
+      {canUpgrade && !result && (
         <>
           <div className="upg-odds">
-            <span>Шанс успеха</span>
+            <span>{mode === "mystery" ? "Средний шанс" : "Шанс успеха"}</span>
             <div className="upg-bar">
               <i style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
             </div>
             <b>{fmt(pct)}%</b>
           </div>
-          <small className="muted">Ставка — {fromItems.length} {giftsWord(fromItems.length)} общей стоимостью ⭐ {fmt(fromValue)}. При неудаче все выбранные подарки сгорят.</small>
+          <small className="muted">{mode === "mystery" ? `Цель выбирается случайно из всех ${mysteryTargets.length} NFT каталога. Дорогие NFT выпадают с меньшим шансом.` : `Ставка — ${fromItems.length} ${giftsWord(fromItems.length)} общей стоимостью ⭐ ${fmt(fromValue)}.`} При неудаче все выбранные подарки сгорят.</small>
         </>
+      )}
+
+      {mode === "mystery" && result && !rolling && result.win && result.reward && (
+        <div className="mystery-win-card">
+          <small>ТВОЙ NFT</small>
+          <GiftArt className="mystery-win-art" name={result.reward.name} imageUrl={result.reward.image_url} />
+          <b>{result.reward.name}</b>
+          <em>⭐ {fmt(result.reward.price_stars)}</em>
+        </div>
       )}
 
       {result && !rolling && (
@@ -230,8 +288,8 @@ export default function UpgradeGame() {
         </div>
       )}
 
-      <button className="btn primary wide upg-cta" onClick={upgrade} disabled={fromItems.length === 0 || !toGift || rolling}>
-        {rolling ? "Крутим…" : toGift ? `Улучшить с шансом ${fmt(pct)}%` : "Улучшить"}
+      <button className={`btn primary wide upg-cta${mode === "mystery" ? " mystery-cta" : ""}`} onClick={upgrade} disabled={!canUpgrade || rolling}>
+        {rolling ? "Крутим…" : mode === "mystery" ? (canUpgrade ? `Крутить мистери · ${fmt(pct)}%` : "Выбери подарок для ставки") : toGift ? `Улучшить с шансом ${fmt(pct)}%` : "Улучшить"}
       </button>
 
       {picker && (
