@@ -16,6 +16,7 @@ import RocketGame from "./games/RocketGame";
 import MinesGame from "./games/MinesGame";
 import SnowfallGame from "./games/SnowfallGame";
 import CaseBattleGame from "./games/CaseBattleGame";
+import BrandIntro from "./ui/BrandIntro";
 
 type Tab = "cases" | "games" | "friends" | "profile";
 
@@ -191,6 +192,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <BrandIntro />
       <div className="edge-glow" aria-hidden="true" />
       <header className="topbar">
         <button className="who" onClick={() => go("profile")} aria-label="Профиль">
