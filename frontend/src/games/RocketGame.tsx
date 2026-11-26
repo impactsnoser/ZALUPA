@@ -207,14 +207,16 @@ type NumberRef = { current: number };
 type NullableNumberRef = { current: number | null };
 type BoolRef = { current: boolean };
 type TextRef = { current: HTMLSpanElement | null };
+type ServerClockRef = { current: { elapsed: number; receivedAtMs: number } | null };
 
 /**
  * Вся движущаяся графика рисуется на canvas.
- * Множитель считается по клиентным часам (Date.now − время запуска),
- * поэтому анимация никогда не останавливается из-за разницы часов с сервером.
+ * Множитель считается по серверному elapsed + клиентскому времени с последнего ответа.
+ * Так клиент не убегает вперёд сервера (учитывается сетевая задержка запуска)
+ * и не останавливается из-за разницы часов.
  */
 function RocketScene({
-  launchTimeRef,
+  serverClockRef,
   frozenRef,
   crashedRef,
   multRef,
@@ -224,7 +226,7 @@ function RocketScene({
   serverMultRef,
   shownRef,
 }: {
-  launchTimeRef: NumberRef;
+  serverClockRef: ServerClockRef;
   frozenRef: NullableNumberRef;
   crashedRef: BoolRef;
   multRef: TextRef;
@@ -277,15 +279,21 @@ function RocketScene({
         shown = 1;
       }
 
-      // Целевое значение: клиентные часы по формуле сервера.
+      // Целевое значение: серверное elapsed + клиентское время с момента получения ответа.
       const frozen = frozenRef.current;
       let target: number;
       if (frozen !== null) {
         target = frozen;
       } else {
-        const elapsed = (Date.now() - launchTimeRef.current) / 1000;
+        const clock = serverClockRef.current;
+        let elapsed: number;
+        if (clock) {
+          elapsed = clock.elapsed + (Date.now() - clock.receivedAtMs) / 1000;
+        } else {
+          elapsed = 0;
+        }
         target = multFromElapsed(elapsed);
-        // Поддерживаем связь с серверным множителем (на случай старых бэкендов).
+        // Не опускаемся ниже последнего значения сервера (на случай старых бэкендов).
         if (target < serverMultRef.current) target = serverMultRef.current;
       }
 
@@ -349,7 +357,7 @@ function RocketScene({
       observer?.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, [launchTimeRef, frozenRef, crashedRef, multRef, cashRef, betRef, resetRef, serverMultRef, shownRef]);
+  }, [serverClockRef, frozenRef, crashedRef, multRef, cashRef, betRef, resetRef, serverMultRef, shownRef]);
 
   return <canvas ref={canvasRef} className="rk-canvas" aria-hidden="true" />;
 }
@@ -367,12 +375,12 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
   const multRef = useRef<HTMLSpanElement>(null);
   const cashRef = useRef<HTMLSpanElement>(null);
   const betRef = useRef(1);
-  const launchTimeRef = useRef(0);
   const frozenRef = useRef<number | null>(null);
   const crashedRef = useRef(false);
   const resetRef = useRef(0);
   const serverMultRef = useRef(1);
   const shownRef = useRef(1);
+  const serverClockRef = useRef<{ elapsed: number; receivedAtMs: number } | null>(null);
 
   const phase =
     game?.status === "active" ? "running" : game?.status === "lost" ? "crashed" : game?.status === "won" ? "cashed" : "ready";
@@ -401,10 +409,12 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
       void api
         .checkRocket(telegramId, sessionId)
         .then((result) => {
-          // Синхронизируем клиентное время с сервером, если прислал elapsed.
+          // Сервер прислал elapsed (секунды с начала раунда по серверу).
+          // Запоминаем его и клиентское время получения — между ответами
+          // прибавляем только клиентское время, так нет рассинхрона часов.
           serverMultRef.current = Math.max(1, result.multiplier);
-          if (typeof result.elapsed === "number" && result.elapsed > 0) {
-            launchTimeRef.current = Date.now() - result.elapsed * 1000;
+          if (typeof result.elapsed === "number" && result.elapsed >= 0) {
+            serverClockRef.current = { elapsed: result.elapsed, receivedAtMs: Date.now() };
           }
 
           if (result.status !== "active") {
@@ -435,7 +445,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     if (busy || !Number.isFinite(bet) || bet < 0.01 || bet > 100_000) return;
     if (balance < bet) return onDeposit();
     resetRef.current += 1;
-    launchTimeRef.current = Date.now();
+    serverClockRef.current = null;
     frozenRef.current = null;
     crashedRef.current = false;
     serverMultRef.current = 1;
@@ -444,9 +454,8 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     setError("");
     try {
       const result = await api.startRocket(telegramId, Math.max(1, Math.round(bet * starsPerTon)));
-      // Корректируем время запуска по серверу, если прислал elapsed.
-      if (typeof result.elapsed === "number" && result.elapsed > 0) {
-        launchTimeRef.current = Date.now() - result.elapsed * 1000;
+      if (typeof result.elapsed === "number" && result.elapsed >= 0) {
+        serverClockRef.current = { elapsed: result.elapsed, receivedAtMs: Date.now() };
       }
       serverMultRef.current = Math.max(1, result.multiplier);
       setGame(result);
@@ -480,7 +489,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     setError("");
     try {
       const result = await api.cashoutRocket(telegramId, game.session_id);
-      launchTimeRef.current = 0;
+      serverClockRef.current = null;
       frozenRef.current = result.multiplier;
       crashedRef.current = false;
       serverMultRef.current = Math.max(1, result.multiplier);
@@ -517,7 +526,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
         </b>
 
         <RocketScene
-          launchTimeRef={launchTimeRef}
+          serverClockRef={serverClockRef}
           frozenRef={frozenRef}
           crashedRef={crashedRef}
           multRef={multRef}
