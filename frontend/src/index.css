@@ -353,9 +353,17 @@ audio#secret-track { display: none; }
 
 /* ============ Экран игры ============ */
 .play { position: fixed; inset: 0; z-index: 50; overflow-y: auto; background: #050507; background-image: radial-gradient(120% 50% at 50% -10%, rgba(123, 92, 255, 0.16), transparent 70%); animation: fade 0.2s; }
-.play-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; max-width: 480px; margin: 0 auto; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: rgba(5, 5, 7, 0.85); backdrop-filter: blur(12px); }
+/* Без backdrop-filter: размытие пересчитывалось на каждом кадре анимации и тормозило. */
+.play-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; max-width: 480px; margin: 0 auto; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: rgba(5, 5, 7, 0.97); }
 .play-head h2 { font: 700 18px var(--font-display); }
 .play-body { max-width: 480px; margin: 0 auto; padding: 8px 16px calc(28px + env(safe-area-inset-bottom)); }
+
+/* Пока открыта игра, фон приложения не нужен — убираем тяжёлые слои (backdrop-filter, тикер, свечение). */
+.app--game > .topbar,
+.app--game > main,
+.app--game > .dock,
+.app--game > .edge-glow,
+.app--game > .brand-intro { display: none; }
 .game-return-notice { margin: 0 0 12px; padding: 9px 11px; border: 1px solid rgba(255,205,104,.18); border-radius: 12px; background: rgba(255,205,104,.06); color: var(--snow-dim); font-size: 11px; line-height: 1.45; text-align: center; }
 .game-return-notice b { color: var(--gold); }
 
@@ -519,24 +527,20 @@ audio#secret-track { display: none; }
 .rk-mult {
   position: absolute; top: 30px; left: 18px; z-index: 3;
   font: 700 clamp(34px, 11vw, 52px) / 1 var(--font-display); letter-spacing: -1.5px;
-  color: #ff3d7f; text-shadow: 0 0 26px rgba(255, 61, 127, 0.6), 0 4px 18px rgba(0, 0, 0, 0.45);
-  transition: color 0.2s;
+  color: #ff3d7f; text-shadow: 0 0 18px rgba(255, 61, 127, 0.55);
+  will-change: transform; transition: color 0.2s;
 }
-.rk-x { font-size: 0.6em; margin-right: 1px; opacity: 0.9; }
-.rk-stage.crashed .rk-mult { color: #ff5b6e; text-shadow: 0 0 26px rgba(255, 60, 80, 0.6), 0 4px 18px rgba(0, 0, 0, 0.45); }
-.rk-stage.cashed .rk-mult { color: #ffd27a; text-shadow: 0 0 26px rgba(247, 193, 74, 0.65), 0 4px 18px rgba(0, 0, 0, 0.45); }
-.rk-chart { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; pointer-events: none; }
-.rk-stage.crashed .rk-craft { opacity: 0.4; }
-.rk-flame {
-  transform-box: fill-box; transform-origin: right center;
-  animation: rkFlame 0.14s ease-in-out infinite alternate;
+.rk-stage.crashed .rk-mult { color: #ff5b6e; text-shadow: 0 0 18px rgba(255, 60, 80, 0.55); }
+.rk-stage.cashed .rk-mult { color: #ffd27a; text-shadow: 0 0 18px rgba(247, 193, 74, 0.6); }
+/* Canvas вынесен в отдельный GPU-слой, чтобы его кадры не перерисовывали весь экран. */
+.rk-canvas {
+  position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%;
+  pointer-events: none; display: block; transform: translateZ(0); will-change: transform;
 }
-.rk-coin { transform-box: fill-box; transform-origin: center; animation: rkBob 2.2s ease-in-out infinite; }
 .rk-msg {
   position: absolute; left: 50%; bottom: 14px; z-index: 4; transform: translateX(-50%);
   padding: 6px 14px; border-radius: 999px; white-space: nowrap;
-  font-weight: 700; font-size: 13px; background: rgba(5, 5, 10, 0.74);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  font-weight: 700; font-size: 13px; background: rgba(5, 5, 10, 0.82);
   animation: rkMsgIn 0.25s ease-out;
 }
 .rk-msg.bad { color: #ff8a98; border: 1px solid rgba(255, 60, 80, 0.42); }
@@ -553,14 +557,6 @@ audio#secret-track { display: none; }
 .rk-chip[data-tier="3"] { color: #5fe0c0; border-color: rgba(49, 208, 170, 0.45); background: rgba(49, 208, 170, 0.12); }
 .rk-chip[data-tier="4"] { color: #ffd27a; border-color: rgba(247, 193, 74, 0.5); background: rgba(247, 193, 74, 0.14); }
 
-@keyframes rkFlame {
-  from { transform: scaleX(0.82) scaleY(1); }
-  to { transform: scaleX(1.12) scaleY(0.88); }
-}
-@keyframes rkBob {
-  0%, 100% { transform: translateY(0) rotate(-8deg); }
-  50% { transform: translateY(-8px) rotate(8deg); }
-}
 @keyframes rkMsgIn {
   from { opacity: 0; transform: translate(-50%, 6px); }
   to { opacity: 1; transform: translate(-50%, 0); }

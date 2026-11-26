@@ -191,7 +191,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app${game ? " app--game" : ""}`}>
       <BrandIntro />
       <div className="edge-glow" aria-hidden="true" />
       <header className="topbar">

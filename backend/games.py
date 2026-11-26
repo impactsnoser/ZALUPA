@@ -734,8 +734,9 @@ def _rocket_multiplier(elapsed: float) -> float:
 
 
 def _rocket_state(game: RocketSession, user: User) -> dict:
+    now = datetime.now(timezone.utc)
     started = _to_utc(game.started_at)
-    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    elapsed = (now - started).total_seconds()
     crash = game.crash_milli / 1000
 
     if game.status == "won":
@@ -755,6 +756,10 @@ def _rocket_state(game: RocketSession, user: User) -> dict:
         "multiplier": round(current, 2),
         # Точку падения показываем только после завершения партии.
         "crash_multiplier": round(crash, 2) if game.status != "active" else None,
+        # Сколько секунд идёт раунд и какое время было на сервере в момент ответа:
+        # клиент считает множитель сам по этой формуле, поэтому анимация не дёргается.
+        "elapsed": round(elapsed, 3),
+        "server_time": now.timestamp(),
         "payout_stars": game.payout_stars,
         "payout_ton": stars_to_ton(game.payout_stars),
         "balance_stars": user.balance_stars,

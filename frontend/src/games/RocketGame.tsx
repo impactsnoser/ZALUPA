@@ -15,13 +15,29 @@ type GameProps = {
 type Pt = { x: number; y: number };
 type Curve = [Pt, Pt, Pt, Pt];
 
-/** Кривая полёта в координатах viewBox 360×260. */
+/** Кривая полёта в координатах сцены 360×260. */
 const CURVE: Curve = [
-  { x: 16, y: 218 },
-  { x: 108, y: 214 },
-  { x: 200, y: 158 },
-  { x: 316, y: 52 },
+  { x: 16, y: 222 },
+  { x: 112, y: 218 },
+  { x: 206, y: 162 },
+  { x: 320, y: 58 },
 ];
+
+const W = 360;
+const H = 260;
+
+/** Коэффициент роста — должен совпадать с ROCKET_GROWTH на бэкенде. */
+const ROCKET_GROWTH = 0.08889;
+
+/** Кривая множителя: 6·e^(growth·t) − 5. Считаем её локально, чтобы анимация была плавной. */
+function multFromElapsed(elapsed: number): number {
+  if (elapsed <= 0) return 1;
+  return Math.max(1, 6 * Math.exp(ROCKET_GROWTH * elapsed) - 5);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return value < min ? min : value > max ? max : value;
+}
 
 function pointAt(t: number, c: Curve = CURVE): Pt {
   const mt = 1 - t;
@@ -35,64 +51,307 @@ function pointAt(t: number, c: Curve = CURVE): Pt {
   };
 }
 
-function angleAt(t: number, c: Curve = CURVE): number {
-  const e = 0.001;
-  const a = pointAt(Math.max(0, t - e), c);
-  const b = pointAt(Math.min(1, t + e), c);
-  return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+function progressOf(mult: number): number {
+  const growth = Math.log(Math.max(1, mult)) / Math.log(6);
+  return clamp(0.18 + 0.82 * growth, 0, 1);
 }
 
-/** Полная траектория. Считается один раз при загрузке модуля. */
-const FULL_PATH = (() => {
-  const steps = 34;
-  let path = "";
-  for (let i = 0; i <= steps; i += 1) {
-    const p = pointAt(i / steps);
-    path += `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)} `;
+/** Прорисовка части кривой от 0 до u. */
+function strokeCurve(ctx: CanvasRenderingContext2D, u: number, style: string | CanvasGradient, width: number) {
+  if (u <= 0.001) return;
+  const steps = Math.max(2, Math.round(44 * u));
+  const start = pointAt(0);
+  ctx.beginPath();
+  ctx.moveTo(start.x, start.y);
+  for (let i = 1; i <= steps; i += 1) {
+    const p = pointAt((u * i) / steps);
+    ctx.lineTo(p.x, p.y);
   }
-  return path.trim();
-})();
-
-/** Мультяшная ракета. Рисуется в системе 64×64, нос смотрит вправо. */
-function RocketArt({ crashed }: { crashed?: boolean }) {
-  return (
-    <g className={`rk-craft${crashed ? " crashed" : ""}`}>
-      <g className="rk-flame">
-        <path d="M22 32 C12 25 3 16 0 32 C3 48 12 39 22 32 Z" fill="#ff7a2f" />
-        <path d="M22 32 C15 28 9 23 6 32 C9 41 15 36 22 32 Z" fill="#ffe27a" />
-      </g>
-      <path d="M31 21 L24 8 L42 19 Z" fill="#2447b8" />
-      <path d="M31 43 L24 56 L42 45 Z" fill="#2447b8" />
-      <path
-        d="M20 32 C20 23 32 16 44 17 C54 18 60 25 62 32 C60 39 54 46 44 47 C32 48 20 41 20 32 Z"
-        fill="url(#rkBody)"
-      />
-      <path
-        d="M27 24 C35 19 46 20 52 25"
-        stroke="#dbe9ff"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        opacity=".55"
-        fill="none"
-      />
-      <path d="M46 18 C55 20 60 26 62 32 C59 31 53 28 47 27 Z" fill="#9dc2ff" opacity=".7" />
-      <circle cx="44" cy="32" r="9.5" fill="#241a4d" stroke="#8f6bff" strokeWidth="2" />
-      <circle cx="44" cy="32" r="6" fill="url(#rkGlass)" />
-      <circle cx="41.5" cy="29.5" r="1.8" fill="#fff" opacity=".85" />
-    </g>
-  );
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = style;
+  ctx.lineWidth = width;
+  ctx.stroke();
 }
 
-function Coin({ x, y, delay }: { x: number; y: number; delay: number }) {
-  return (
-    <g transform={`translate(${x} ${y})`}>
-      <g className="rk-coin" style={{ animationDelay: `${delay}s` }}>
-        <circle r="7.5" fill="url(#rkCoin)" />
-        <circle r="5.4" fill="none" stroke="#b9791a" strokeWidth="1" opacity=".8" />
-        <path d="M0 -3 L1.6 0 L0 3 L-1.6 0 Z" fill="#fff6d8" opacity=".9" />
-      </g>
-    </g>
-  );
+function drawRocket(ctx: CanvasRenderingContext2D, time: number, crashed: boolean) {
+  ctx.save();
+  ctx.scale(1.55, 1.55);
+  if (crashed) ctx.globalAlpha = 0.35;
+
+  // пламя
+  const flick = 0.86 + Math.sin(time * 22) * 0.14;
+  const flame = ctx.createLinearGradient(-74, 0, -22, 0);
+  flame.addColorStop(0, "rgba(255, 90, 40, 0)");
+  flame.addColorStop(0.3, "rgba(255, 106, 31, 0.85)");
+  flame.addColorStop(0.72, "#ffb02e");
+  flame.addColorStop(1, "#ffef9a");
+  ctx.fillStyle = flame;
+  ctx.beginPath();
+  ctx.moveTo(-20, -11);
+  ctx.quadraticCurveTo(-46, -17 * flick, -74, 0);
+  ctx.quadraticCurveTo(-46, 17 * flick, -20, 11);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255, 250, 214, 0.85)";
+  ctx.beginPath();
+  ctx.moveTo(-20, -4.5);
+  ctx.quadraticCurveTo(-38, -7 * flick, -56, 0);
+  ctx.quadraticCurveTo(-38, 7 * flick, -20, 4.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // хвостовые плавники
+  const fin = ctx.createLinearGradient(0, -26, 0, 0);
+  fin.addColorStop(0, "#5d8cff");
+  fin.addColorStop(1, "#16267f");
+  ctx.fillStyle = fin;
+  ctx.beginPath();
+  ctx.moveTo(-2, -14);
+  ctx.quadraticCurveTo(-16, -26, -30, -25);
+  ctx.quadraticCurveTo(-19, -18, -15, -11);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-2, 14);
+  ctx.quadraticCurveTo(-16, 26, -30, 25);
+  ctx.quadraticCurveTo(-19, 18, -15, 11);
+  ctx.closePath();
+  ctx.fill();
+
+  // корпус
+  const body = ctx.createLinearGradient(0, -22, 0, 22);
+  body.addColorStop(0, "#8fb4ff");
+  body.addColorStop(0.4, "#4a76ff");
+  body.addColorStop(1, "#1a2f9e");
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.ellipse(-6, 0, 21.5, 19.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // фиолетовый нос
+  const nose = ctx.createLinearGradient(0, -18, 0, 18);
+  nose.addColorStop(0, "#d79bff");
+  nose.addColorStop(0.42, "#9a52fa");
+  nose.addColorStop(1, "#5b1cb4");
+  ctx.fillStyle = nose;
+  ctx.beginPath();
+  ctx.moveTo(8, -16.5);
+  ctx.bezierCurveTo(21, -14.5, 30, -9, 34, -2);
+  ctx.quadraticCurveTo(36, 0, 34, 2);
+  ctx.bezierCurveTo(30, 9, 21, 14.5, 8, 16.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // белое кольцо
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.72)";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.ellipse(8, 0, 4.4, 15.5, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // блик сверху корпуса
+  ctx.strokeStyle = "rgba(232, 242, 255, 0.5)";
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-18, -13);
+  ctx.quadraticCurveTo(-6, -18, 4, -14.5);
+  ctx.stroke();
+
+  // юбка сопла
+  ctx.fillStyle = "#2a3f9e";
+  ctx.beginPath();
+  ctx.ellipse(-27, 0, 4, 12.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawCoin(ctx: CanvasRenderingContext2D, x: number, y: number, time: number, phase: number) {
+  const bob = Math.sin(time * 1.8 + phase) * 5;
+  const tilt = Math.sin(time * 1.2 + phase) * 0.16;
+  ctx.save();
+  ctx.translate(x, y + bob);
+  ctx.rotate(tilt);
+
+  const gold = ctx.createRadialGradient(-2, -2, 1, 0, 0, 8);
+  gold.addColorStop(0, "#fff1b8");
+  gold.addColorStop(0.5, "#ffd75e");
+  gold.addColorStop(1, "#d99a1f");
+  ctx.fillStyle = gold;
+  ctx.beginPath();
+  ctx.arc(0, 0, 7.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(185, 121, 26, 0.8)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, 0, 5.4, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(255, 246, 216, 0.9)";
+  ctx.beginPath();
+  ctx.moveTo(0, -3);
+  ctx.lineTo(1.6, 0);
+  ctx.lineTo(0, 3);
+  ctx.lineTo(-1.6, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+type NumberRef = { current: number };
+type NullableNumberRef = { current: number | null };
+type BoolRef = { current: boolean };
+type TextRef = { current: HTMLSpanElement | null };
+type ClockRef = { current: { elapsed: number; serverTimeMs: number } | null };
+
+/**
+ * Вся движущаяся графика рисуется на canvas.
+ * Множитель считается локально по формуле сервера, поэтому кадры не зависят от сети
+ * и не дёргаются при обновлениях.
+ */
+function RocketScene({
+  clockRef,
+  frozenRef,
+  crashedRef,
+  multRef,
+  cashRef,
+  betRef,
+  resetRef,
+  serverMultRef,
+}: {
+  clockRef: ClockRef;
+  frozenRef: NullableNumberRef;
+  crashedRef: BoolRef;
+  multRef: TextRef;
+  cashRef: TextRef;
+  betRef: NumberRef;
+  resetRef: NumberRef;
+  serverMultRef: NumberRef;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) return;
+
+    let raf = 0;
+    let dpr = 1;
+    let cssW = W;
+    let cssH = H;
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      cssW = Math.max(1, rect.width);
+      cssH = Math.max(1, rect.height);
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+    };
+    resize();
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(resize);
+      observer.observe(canvas);
+    } else {
+      window.addEventListener("resize", resize);
+    }
+
+    let shown = 1;
+    let lastReset = resetRef.current;
+
+    const render = () => {
+      const time = performance.now() / 1000;
+
+      // Новый раунд — начинаем с единицы без плавного «докатывания» назад.
+      if (resetRef.current !== lastReset) {
+        lastReset = resetRef.current;
+        shown = 1;
+      }
+
+      // Целевое значение: локальные часы по формуле сервера, а не «догоняем» ответы.
+      const frozen = frozenRef.current;
+      const clock = clockRef.current;
+      let target: number;
+      if (frozen !== null) {
+        target = frozen;
+      } else if (clock) {
+        const elapsed = clock.elapsed + (Date.now() - clock.serverTimeMs) / 1000;
+        target = multFromElapsed(elapsed);
+      } else {
+        // Старый бэкенд без elapsed/server_time — держимся последнего значения сервера.
+        target = serverMultRef.current;
+      }
+
+      // Лёгкое сглаживание: убирает микропрыжки, но не добавляет задержки.
+      shown += (target - shown) * 0.4;
+
+      if (multRef.current) {
+        const text = `X${shown.toFixed(2).replace(".", ",")}`;
+        if (multRef.current.textContent !== text) multRef.current.textContent = text;
+      }
+      if (cashRef.current) {
+        const text = fmt(betRef.current * shown);
+        if (cashRef.current.textContent !== text) cashRef.current.textContent = text;
+      }
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+
+      // Переходим в координаты сцены 360×260.
+      ctx.setTransform((cssW / W) * dpr, 0, 0, (cssH / H) * dpr, 0, 0);
+
+      const u = progressOf(shown);
+
+      // призрачная траектория
+      strokeCurve(ctx, 1, "rgba(255, 255, 255, 0.06)", 2);
+
+      // пройденный путь
+      strokeCurve(ctx, u, "rgba(255, 47, 126, 0.2)", 11);
+      const trail = ctx.createLinearGradient(0, H, W, 0);
+      trail.addColorStop(0, "#a01a52");
+      trail.addColorStop(0.45, "#ff2f7e");
+      trail.addColorStop(1, "#ff7aa8");
+      strokeCurve(ctx, u, trail, 4.6);
+      strokeCurve(ctx, u, "rgba(255, 214, 232, 0.55)", 1.2);
+
+      // монеты
+      drawCoin(ctx, 268, 88, time, 0);
+      drawCoin(ctx, 314, 150, time, 1.7);
+      drawCoin(ctx, 224, 110, time, 3.1);
+
+      // ракета парит над кривой: позиция зависит от прогресса, а не от самой линии
+      const rx = 118 + (258 - 118) * u;
+      const ry = 176 + (96 - 176) * u + Math.sin(time * 3) * 2.5;
+      ctx.save();
+      ctx.translate(rx, ry);
+      ctx.rotate(-0.42 - 0.1 * u);
+      drawRocket(ctx, time, crashedRef.current);
+      ctx.restore();
+    };
+
+    render();
+    const frame = () => {
+      render();
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, [clockRef, frozenRef, crashedRef, multRef, cashRef, betRef, resetRef, serverMultRef]);
+
+  return <canvas ref={canvasRef} className="rk-canvas" aria-hidden="true" />;
 }
 
 export default function RocketGame({ balance, starsPerTon, telegramId, onBalance, onChanged, onDeposit }: GameProps) {
@@ -104,61 +363,21 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
   const [history, setHistory] = useState<number[]>([]);
 
   const polling = useRef(false);
-  const prevStatus = useRef("");
-  // Анимация идёт напрямую через DOM: без setState на каждом кадре.
+  const statusRef = useRef("");
   const multRef = useRef<HTMLSpanElement>(null);
-  const rocketRef = useRef<SVGGElement>(null);
-  const trailRef = useRef<SVGPathElement>(null);
-  const glowRef = useRef<SVGPathElement>(null);
-  const shownRef = useRef(1);
-  const targetRef = useRef(1);
-  const applyRef = useRef<(value: number) => void>(() => undefined);
+  const cashRef = useRef<HTMLSpanElement>(null);
+  const betRef = useRef(1);
+  const clockRef = useRef<{ elapsed: number; serverTimeMs: number } | null>(null);
+  const frozenRef = useRef<number | null>(null);
+  const crashedRef = useRef(false);
+  const resetRef = useRef(0);
+  const serverMultRef = useRef(1);
 
   const phase =
     game?.status === "active" ? "running" : game?.status === "lost" ? "crashed" : game?.status === "won" ? "cashed" : "ready";
-  const mult = game?.multiplier ?? 1;
-  const payout = game?.payout_ton ?? bet * mult;
+  const payout = game?.payout_ton ?? 0;
 
-  targetRef.current = Math.max(1, mult);
-
-  // Единый rAF-цикл: двигает ракету, тянет кривую и печатает множитель
-  // без React-перерисовок. Пишем в DOM только когда значение реально меняется.
-  useLayoutEffect(() => {
-    let raf = 0;
-
-    const apply = (value: number) => {
-      if (multRef.current) multRef.current.textContent = value.toFixed(2).replace(".", ",");
-      const u = Math.min(1, Math.max(0, 0.06 + ((value - 1) / 3) * 0.94));
-      const tip = pointAt(u);
-      const angle = angleAt(u);
-      if (rocketRef.current) {
-        rocketRef.current.setAttribute("transform", `translate(${tip.x.toFixed(1)} ${tip.y.toFixed(1)}) rotate(${angle.toFixed(1)})`);
-      }
-      const offset = (1 - u).toFixed(4);
-      if (trailRef.current) trailRef.current.setAttribute("stroke-dashoffset", offset);
-      if (glowRef.current) glowRef.current.setAttribute("stroke-dashoffset", offset);
-    };
-
-    applyRef.current = apply;
-    apply(shownRef.current);
-
-    const tick = () => {
-      const target = targetRef.current;
-      const cur = shownRef.current;
-      if (Math.abs(target - cur) > 0.0006) {
-        const next = cur + (target - cur) * 0.18;
-        shownRef.current = next;
-        apply(next);
-      } else if (cur !== target) {
-        shownRef.current = target;
-        apply(target);
-      }
-      raf = requestAnimationFrame(tick);
-    };
-
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
+  betRef.current = bet;
 
   // История последних раундов: настоящая, с бэкенда.
   function loadHistory() {
@@ -173,14 +392,6 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
   }, []);
 
   useEffect(() => {
-    const status = game?.status ?? "";
-    if (prevStatus.current === "active" && (status === "lost" || status === "won" || status === "abandoned")) {
-      loadHistory();
-    }
-    prevStatus.current = status;
-  }, [game?.status]);
-
-  useEffect(() => {
     if (phase !== "running" || !game) return;
     const sessionId = game.session_id;
     const timer = window.setInterval(() => {
@@ -189,32 +400,58 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
       void api
         .checkRocket(telegramId, sessionId)
         .then((result) => {
-          setGame(result);
-          onBalance(result.balance_stars, result.balance_ton);
-          if (result.status !== "active") onChanged();
+          // Синхронизируем локальные часы с сервером — дальше множитель считаем сами.
+          serverMultRef.current = Math.max(1, result.multiplier);
+          if (typeof result.elapsed === "number" && typeof result.server_time === "number") {
+            clockRef.current = { elapsed: result.elapsed, serverTimeMs: result.server_time * 1000 };
+          }
+
+          if (result.status !== "active") {
+            frozenRef.current = result.status === "won" ? result.multiplier : (result.crash_multiplier ?? result.multiplier);
+            crashedRef.current = result.status !== "won";
+          }
+
+          // React перерисовываем только при смене статуса — не 3 раза в секунду.
+          if (result.status !== statusRef.current) {
+            statusRef.current = result.status;
+            setGame(result);
+            if (result.status !== "active") {
+              onBalance(result.balance_stars, result.balance_ton);
+              onChanged();
+              loadHistory();
+            }
+          }
         })
         .catch((err) => setError(err instanceof Error ? err.message : "Не удалось обновить раунд"))
         .finally(() => {
           polling.current = false;
         });
-    }, 300);
+    }, 250);
     return () => window.clearInterval(timer);
   }, [game?.session_id, phase, telegramId, onBalance, onChanged]);
 
   async function launch() {
     if (busy || !Number.isFinite(bet) || bet < 0.01 || bet > 100_000) return;
     if (balance < bet) return onDeposit();
-    shownRef.current = 1;
-    applyRef.current(1);
-    prevStatus.current = "";
+    resetRef.current += 1;
+    clockRef.current = null;
+    frozenRef.current = null;
+    crashedRef.current = false;
+    serverMultRef.current = 1;
+    statusRef.current = "active";
     setBusy(true);
     setError("");
     try {
       const result = await api.startRocket(telegramId, Math.max(1, Math.round(bet * starsPerTon)));
+      serverMultRef.current = Math.max(1, result.multiplier);
+      if (typeof result.elapsed === "number" && typeof result.server_time === "number") {
+        clockRef.current = { elapsed: result.elapsed, serverTimeMs: result.server_time * 1000 };
+      }
       setGame(result);
       onBalance(result.balance_stars, result.balance_ton);
       onChanged();
     } catch (err) {
+      statusRef.current = "";
       setError(err instanceof Error ? err.message : "Не удалось начать раунд");
     } finally {
       setBusy(false);
@@ -239,6 +476,11 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     setError("");
     try {
       const result = await api.cashoutRocket(telegramId, game.session_id);
+      clockRef.current = null;
+      frozenRef.current = result.multiplier;
+      crashedRef.current = false;
+      serverMultRef.current = Math.max(1, result.multiplier);
+      statusRef.current = result.status;
       setGame(result);
       onBalance(result.balance_stars, result.balance_ton);
       onChanged();
@@ -249,7 +491,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     }
   }
 
-  const crashMult = game?.crash_multiplier ?? game?.multiplier ?? mult;
+  const crashMult = game?.crash_multiplier ?? game?.multiplier ?? 1;
 
   return (
     <div className="stack">
@@ -267,69 +509,19 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
         </div>
 
         <b className="rk-mult">
-          <span className="rk-x">×</span>
           <span ref={multRef} />
         </b>
 
-        <svg className="rk-chart" viewBox="0 0 360 260" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-          <defs>
-            <linearGradient id="rkBody" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#5d8cff" />
-              <stop offset=".55" stopColor="#3f6bff" />
-              <stop offset="1" stopColor="#2447b8" />
-            </linearGradient>
-            <radialGradient id="rkGlass" cx=".35" cy=".3" r=".8">
-              <stop offset="0" stopColor="#c8f7ff" />
-              <stop offset=".55" stopColor="#6fd0f5" />
-              <stop offset="1" stopColor="#2a6fd0" />
-            </radialGradient>
-            <linearGradient id="rkCoin" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#ffe27a" />
-              <stop offset="1" stopColor="#e0a02a" />
-            </linearGradient>
-            <linearGradient id="rkTrail" x1="0" y1="1" x2="1" y2="0">
-              <stop offset="0" stopColor="#a01a52" />
-              <stop offset=".45" stopColor="#ff2f7e" />
-              <stop offset="1" stopColor="#ff6aa8" />
-            </linearGradient>
-          </defs>
-
-          {/* призрачная траектория впереди */}
-          <path d={FULL_PATH} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="2" strokeLinecap="round" />
-
-          {/* пройденный путь: полный контур, открываем его через stroke-dashoffset */}
-          <path
-            ref={glowRef}
-            d={FULL_PATH}
-            pathLength={1}
-            strokeDasharray={1}
-            fill="none"
-            stroke="url(#rkTrail)"
-            strokeWidth="9"
-            strokeLinecap="round"
-            opacity=".22"
-          />
-          <path
-            ref={trailRef}
-            d={FULL_PATH}
-            pathLength={1}
-            strokeDasharray={1}
-            fill="none"
-            stroke="url(#rkTrail)"
-            strokeWidth="3.2"
-            strokeLinecap="round"
-          />
-
-          <Coin x={244} y={96} delay={0} />
-          <Coin x={292} y={150} delay={0.5} />
-          <Coin x={205} y={120} delay={1.1} />
-
-          <g ref={rocketRef}>
-            <g transform="translate(-32 -32)">
-              <RocketArt crashed={phase === "crashed"} />
-            </g>
-          </g>
-        </svg>
+        <RocketScene
+          clockRef={clockRef}
+          frozenRef={frozenRef}
+          crashedRef={crashedRef}
+          multRef={multRef}
+          cashRef={cashRef}
+          betRef={betRef}
+          resetRef={resetRef}
+          serverMultRef={serverMultRef}
+        />
 
         {phase === "crashed" && <p className="rk-msg bad">Улетела на {fmt(crashMult)}×</p>}
         {phase === "cashed" && <p className="rk-msg good">Забрал {fmt(payout)} TON</p>}
@@ -376,7 +568,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
 
       {phase === "running" ? (
         <button className="btn gold wide" onClick={() => void cash()} disabled={busy}>
-          {busy ? "Забираем…" : `Забрать ${fmt(bet * mult)}`}
+          {busy ? "Забираем…" : <>Забрать <b ref={cashRef} /></>}
         </button>
       ) : (
         <button

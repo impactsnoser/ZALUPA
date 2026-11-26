@@ -216,6 +216,10 @@ export interface ServerRocketGame {
   bet_ton: number;
   multiplier: number;
   crash_multiplier: number | null;
+  /** Сколько секунд прошло с начала раунда на момент ответа сервера. */
+  elapsed?: number;
+  /** Unix-время сервера (секунды) в момент формирования ответа. */
+  server_time?: number;
   payout_stars: number;
   payout_ton: number;
   balance_stars: number;
