@@ -46,7 +46,7 @@ async def public_game_settings(session: AsyncSession = Depends(get_session)):
 MINES_CELLS = 25
 MINES_RTP = 0.95
 ROCKET_RTP = 0.95
-ROCKET_GROWTH = 0.08889
+ROCKET_GROWTH = 0.044445
 ROCKET_MAX_MULTIPLIER = 100.0
 
 SNOWFALL_TOOLS = [

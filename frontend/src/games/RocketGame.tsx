@@ -27,7 +27,7 @@ const W = 360;
 const H = 260;
 
 /** Коэффициент роста — должен совпадать с ROCKET_GROWTH на бэкенде. */
-const ROCKET_GROWTH = 0.08889;
+const ROCKET_GROWTH = 0.044445;
 
 /** Кривая множителя: 6·e^(growth·t) − 5. Считаем локально по клиентным часам. */
 function multFromElapsed(elapsed: number): number {
@@ -483,14 +483,14 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
 
   async function cash() {
     if (!game || busy || phase !== "running") return;
-    // Замораживаем множитель на момент клика — во время запроса он не должен расти.
-    frozenRef.current = shownRef.current;
     setBusy(true);
     setError("");
     try {
       const result = await api.cashoutRocket(telegramId, game.session_id);
+      // Берём точное серверное значение — и число на экране, и выплата будут одинаковыми.
       serverClockRef.current = null;
       frozenRef.current = result.multiplier;
+      shownRef.current = result.multiplier;
       crashedRef.current = false;
       serverMultRef.current = Math.max(1, result.multiplier);
       statusRef.current = result.status;
