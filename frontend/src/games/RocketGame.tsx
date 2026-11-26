@@ -223,6 +223,7 @@ function RocketScene({
   betRef,
   resetRef,
   serverMultRef,
+  shownRef,
 }: {
   clockRef: ClockRef;
   frozenRef: NullableNumberRef;
@@ -232,6 +233,7 @@ function RocketScene({
   betRef: NumberRef;
   resetRef: NumberRef;
   serverMultRef: NumberRef;
+  shownRef: NumberRef;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -292,6 +294,7 @@ function RocketScene({
 
       // Лёгкое сглаживание: убирает микропрыжки, но не добавляет задержки.
       shown += (target - shown) * 0.4;
+      shownRef.current = shown;
 
       if (multRef.current) {
         const text = `X${shown.toFixed(2).replace(".", ",")}`;
@@ -349,7 +352,7 @@ function RocketScene({
       observer?.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, [clockRef, frozenRef, crashedRef, multRef, cashRef, betRef, resetRef, serverMultRef]);
+  }, [clockRef, frozenRef, crashedRef, multRef, cashRef, betRef, resetRef, serverMultRef, shownRef]);
 
   return <canvas ref={canvasRef} className="rk-canvas" aria-hidden="true" />;
 }
@@ -372,6 +375,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
   const crashedRef = useRef(false);
   const resetRef = useRef(0);
   const serverMultRef = useRef(1);
+  const shownRef = useRef(1);
 
   const phase =
     game?.status === "active" ? "running" : game?.status === "lost" ? "crashed" : game?.status === "won" ? "cashed" : "ready";
@@ -472,6 +476,8 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
 
   async function cash() {
     if (!game || busy || phase !== "running") return;
+    // Замораживаем множитель на момент клика — во время запроса он не должен расти.
+    frozenRef.current = shownRef.current;
     setBusy(true);
     setError("");
     try {
@@ -521,6 +527,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
           betRef={betRef}
           resetRef={resetRef}
           serverMultRef={serverMultRef}
+          shownRef={shownRef}
         />
 
         {phase === "crashed" && <p className="rk-msg bad">Улетела на {fmt(crashMult)}×</p>}
