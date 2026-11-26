@@ -8,6 +8,30 @@ import Sheet from "../ui/Sheet";
 
 const EMOJI: Record<string, string> = { Мишка: "🧸", Сердце: "💖", Подарок: "🎁", Роза: "🌹", Торт: "🎂", Кубок: "🏆" };
 const SPIN_MS = 5000;
+function createVortexSpiralPath() {
+  const turns = 5.2;
+  const steps = 300;
+  const center = 250;
+  const total = turns * Math.PI * 2;
+  const points = Array.from({ length: steps + 1 }, (_, index) => {
+    const t = total * (1 - index / steps);
+    const radius = 8 + t * 5.1;
+    const x = (center + Math.cos(t) * radius).toFixed(1);
+    const y = (center + Math.sin(t) * radius).toFixed(1);
+    return `${index === 0 ? "M" : "L"}${x} ${y}`;
+  });
+  return points.join(" ");
+}
+const UPGRADE_VORTEX_PATH = createVortexSpiralPath();
+const UPGRADE_STARS = [
+  { left: 4, top: 11, size: 12, delay: 0.1 }, { left: 22, top: 4, size: 9, delay: 0.8 },
+  { left: 48, top: 10, size: 11, delay: 1.2 }, { left: 77, top: 6, size: 8, delay: 0.4 },
+  { left: 95, top: 14, size: 12, delay: 1.6 }, { left: 13, top: 27, size: 8, delay: 1.1 },
+  { left: 88, top: 31, size: 10, delay: 0.2 }, { left: 6, top: 49, size: 11, delay: 1.5 },
+  { left: 96, top: 53, size: 8, delay: 0.6 }, { left: 19, top: 67, size: 10, delay: 1.8 },
+  { left: 82, top: 70, size: 12, delay: 0.9 }, { left: 36, top: 88, size: 8, delay: 0.3 },
+  { left: 70, top: 94, size: 10, delay: 1.4 },
+];
 const MYSTERY_QUESTIONS = [
   { left: 8, top: 9, size: 35, delay: 0.1 }, { left: 76, top: 6, size: 26, delay: 1.1 },
   { left: 91, top: 22, size: 39, delay: 0.6 }, { left: 4, top: 31, size: 28, delay: 1.6 },
@@ -115,8 +139,8 @@ export default function UpgradeGame() {
   const pct = chance * 100;
   const rolling = state === "rolling";
   const canUpgrade = fromItems.length > 0 && (mode === "mystery" ? mysteryTargets.length > 0 : Boolean(toGift));
-  const ringRest = mode === "mystery" ? "rgba(211, 180, 255, .16)" : "rgba(255,59,82,.22)";
-  const ringFill = mode === "mystery" ? "#cf9cff" : "#ffd98a";
+  const ringRest = mode === "mystery" ? "rgba(211, 180, 255, .15)" : "rgba(204, 183, 218, .16)";
+  const ringFill = mode === "mystery" ? "rgba(207, 156, 255, .38)" : "rgba(226, 204, 238, .34)";
 
   async function upgrade() {
     if (!canUpgrade || rolling || (mode === "normal" && !toGift)) return;
@@ -188,6 +212,25 @@ export default function UpgradeGame() {
 
   return (
     <div className={`upg${mode === "mystery" ? " upg-mystery" : ""}`}>
+      <div className="upg-vortex" aria-hidden="true">
+        <svg viewBox="0 0 500 500" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <radialGradient id="upgrade-vortex-gradient">
+              <stop offset="0%" stopColor="#ead5ff" stopOpacity=".68" />
+              <stop offset="42%" stopColor="#b778dc" stopOpacity=".52" />
+              <stop offset="100%" stopColor="#713895" stopOpacity=".08" />
+            </radialGradient>
+          </defs>
+          <path className="vortex-glow" d={UPGRADE_VORTEX_PATH} />
+          <path className="vortex-ribbon" d={UPGRADE_VORTEX_PATH} />
+          <path className="vortex-stream" d={UPGRADE_VORTEX_PATH} />
+        </svg>
+      </div>
+      <div className="upgrade-stars" aria-hidden="true">
+        {UPGRADE_STARS.map((star, index) => (
+          <span key={index} style={{ left: `${star.left}%`, top: `${star.top}%`, fontSize: star.size, animationDelay: `${-star.delay}s` }}>✦</span>
+        ))}
+      </div>
       {mode === "mystery" && (
         <div className="mystery-questions" aria-hidden="true">
           {MYSTERY_QUESTIONS.map((question, index) => (
