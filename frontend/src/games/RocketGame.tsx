@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type ServerRocketGame } from "../api";
 import { fmt } from "../lib/format";
 import { Ton } from "../ui/Icons";
@@ -42,20 +42,16 @@ function angleAt(t: number, c: Curve = CURVE): number {
   return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
 }
 
-function trailPath(u: number): string {
+/** Полная траектория. Считается один раз при загрузке модуля. */
+const FULL_PATH = (() => {
   const steps = 34;
   let path = "";
   for (let i = 0; i <= steps; i += 1) {
-    const t = (u * i) / steps;
-    const p = pointAt(t);
+    const p = pointAt(i / steps);
     path += `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)} `;
   }
   return path.trim();
-}
-
-function fullPath(): string {
-  return trailPath(1);
-}
+})();
 
 /** Мультяшная ракета. Рисуется в системе 64×64, нос смотрит вправо. */
 function RocketArt({ crashed }: { crashed?: boolean }) {
@@ -106,31 +102,63 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<number[]>([]);
-  const [displayMult, setDisplayMult] = useState(1);
+
   const polling = useRef(false);
-  const displayRef = useRef(1);
   const prevStatus = useRef("");
+  // Анимация идёт напрямую через DOM: без setState на каждом кадре.
+  const multRef = useRef<HTMLSpanElement>(null);
+  const rocketRef = useRef<SVGGElement>(null);
+  const trailRef = useRef<SVGPathElement>(null);
+  const glowRef = useRef<SVGPathElement>(null);
+  const shownRef = useRef(1);
+  const targetRef = useRef(1);
+  const applyRef = useRef<(value: number) => void>(() => undefined);
 
   const phase =
     game?.status === "active" ? "running" : game?.status === "lost" ? "crashed" : game?.status === "won" ? "cashed" : "ready";
   const mult = game?.multiplier ?? 1;
   const payout = game?.payout_ton ?? bet * mult;
-  const targetMult = Math.max(1, mult);
 
-  // Плавно догоняем серверный множитель между опросами.
-  useEffect(() => {
+  targetRef.current = Math.max(1, mult);
+
+  // Единый rAF-цикл: двигает ракету, тянет кривую и печатает множитель
+  // без React-перерисовок. Пишем в DOM только когда значение реально меняется.
+  useLayoutEffect(() => {
     let raf = 0;
-    const tick = () => {
-      const cur = displayRef.current;
-      const diff = targetMult - cur;
-      const next = Math.abs(diff) < 0.004 ? targetMult : cur + diff * 0.16;
-      displayRef.current = next;
-      setDisplayMult(next);
-      if (next !== targetMult) raf = requestAnimationFrame(tick);
+
+    const apply = (value: number) => {
+      if (multRef.current) multRef.current.textContent = value.toFixed(2).replace(".", ",");
+      const u = Math.min(1, Math.max(0, 0.06 + ((value - 1) / 3) * 0.94));
+      const tip = pointAt(u);
+      const angle = angleAt(u);
+      if (rocketRef.current) {
+        rocketRef.current.setAttribute("transform", `translate(${tip.x.toFixed(1)} ${tip.y.toFixed(1)}) rotate(${angle.toFixed(1)})`);
+      }
+      const offset = (1 - u).toFixed(4);
+      if (trailRef.current) trailRef.current.setAttribute("stroke-dashoffset", offset);
+      if (glowRef.current) glowRef.current.setAttribute("stroke-dashoffset", offset);
     };
+
+    applyRef.current = apply;
+    apply(shownRef.current);
+
+    const tick = () => {
+      const target = targetRef.current;
+      const cur = shownRef.current;
+      if (Math.abs(target - cur) > 0.0006) {
+        const next = cur + (target - cur) * 0.18;
+        shownRef.current = next;
+        apply(next);
+      } else if (cur !== target) {
+        shownRef.current = target;
+        apply(target);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [targetMult]);
+  }, []);
 
   // История последних раундов: настоящая, с бэкенда.
   function loadHistory() {
@@ -176,8 +204,8 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
   async function launch() {
     if (busy || !Number.isFinite(bet) || bet < 0.01 || bet > 100_000) return;
     if (balance < bet) return onDeposit();
-    displayRef.current = 1;
-    setDisplayMult(1);
+    shownRef.current = 1;
+    applyRef.current(1);
     prevStatus.current = "";
     setBusy(true);
     setError("");
@@ -221,10 +249,6 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     }
   }
 
-  const showMult = Math.max(1, displayMult);
-  const u = Math.min(1, Math.max(0, 0.06 + ((showMult - 1) / 3) * 0.94));
-  const tip = pointAt(u);
-  const angle = angleAt(u);
   const crashMult = game?.crash_multiplier ?? game?.multiplier ?? mult;
 
   return (
@@ -244,7 +268,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
 
         <b className="rk-mult">
           <span className="rk-x">×</span>
-          {showMult.toFixed(2).replace(".", ",")}
+          <span ref={multRef} />
         </b>
 
         <svg className="rk-chart" viewBox="0 0 360 260" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
@@ -271,18 +295,36 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
           </defs>
 
           {/* призрачная траектория впереди */}
-          <path d={fullPath()} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="2" strokeLinecap="round" />
+          <path d={FULL_PATH} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="2" strokeLinecap="round" />
 
-          {/* пройденный путь */}
-          <path d={trailPath(u)} fill="none" stroke="url(#rkTrail)" strokeWidth="7" strokeLinecap="round" opacity=".28" style={{ filter: "blur(4px)" }} />
-          <path d={trailPath(u)} fill="none" stroke="url(#rkTrail)" strokeWidth="3.2" strokeLinecap="round" />
-          <path d={trailPath(u)} fill="none" stroke="#ffd0e4" strokeWidth="1" strokeLinecap="round" opacity=".7" />
+          {/* пройденный путь: полный контур, открываем его через stroke-dashoffset */}
+          <path
+            ref={glowRef}
+            d={FULL_PATH}
+            pathLength={1}
+            strokeDasharray={1}
+            fill="none"
+            stroke="url(#rkTrail)"
+            strokeWidth="9"
+            strokeLinecap="round"
+            opacity=".22"
+          />
+          <path
+            ref={trailRef}
+            d={FULL_PATH}
+            pathLength={1}
+            strokeDasharray={1}
+            fill="none"
+            stroke="url(#rkTrail)"
+            strokeWidth="3.2"
+            strokeLinecap="round"
+          />
 
           <Coin x={244} y={96} delay={0} />
           <Coin x={292} y={150} delay={0.5} />
           <Coin x={205} y={120} delay={1.1} />
 
-          <g transform={`translate(${tip.x.toFixed(1)} ${tip.y.toFixed(1)}) rotate(${angle.toFixed(1)})`}>
+          <g ref={rocketRef}>
             <g transform="translate(-32 -32)">
               <RocketArt crashed={phase === "crashed"} />
             </g>
