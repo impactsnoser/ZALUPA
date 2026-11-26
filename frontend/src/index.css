@@ -471,15 +471,105 @@ audio#secret-track { display: none; }
 .pick b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 
 /* Ракетка */
-.flight { position: relative; height: 260px; overflow: hidden; border-radius: 24px; background: linear-gradient(180deg, #050507, var(--felt-2)); border: 1px solid var(--line); }
-.flight-mult { position: absolute; top: 18px; left: 0; right: 0; text-align: center; font: 700 46px var(--font-display); }
-.flight.crashed .flight-mult { color: #ff8a98; }
-.flight.cashed .flight-mult { color: var(--foil); }
-.flight-ship { position: absolute; left: 12%; bottom: 8%; font-size: 46px; transform: translate3d(calc(var(--p) * 190px), calc(var(--p) * -110px), 0); transition: transform 0.1s linear; }
-.flight.crashed .flight-ship { opacity: 0.3; filter: grayscale(1); }
-.flight-msg { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; font-weight: 700; }
-.flight-msg.bad { color: #ff8a98; }
-.flight-msg.good { color: var(--good); }
+.rk-stage {
+  position: relative; aspect-ratio: 360 / 260; overflow: hidden; border-radius: 24px;
+  background:
+    radial-gradient(120% 90% at 18% 0%, rgba(123, 70, 255, 0.42), transparent 58%),
+    radial-gradient(90% 80% at 100% 100%, rgba(255, 60, 130, 0.2), transparent 60%),
+    linear-gradient(160deg, #2a1a5e 0%, #150b33 46%, #090518 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 26px 60px -30px rgba(123, 70, 255, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.rk-stage.crashed {
+  background:
+    radial-gradient(120% 90% at 18% 0%, rgba(255, 60, 90, 0.3), transparent 58%),
+    radial-gradient(90% 80% at 100% 100%, rgba(255, 60, 90, 0.16), transparent 60%),
+    linear-gradient(160deg, #39132a 0%, #1d0a1c 46%, #0c0410 100%);
+  border-color: rgba(255, 70, 90, 0.4);
+}
+.rk-stage.cashed {
+  border-color: rgba(247, 193, 74, 0.45);
+  box-shadow: 0 26px 60px -30px rgba(247, 193, 74, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.rk-grid {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+  background-size: 12.5% 12.5%;
+  -webkit-mask-image: radial-gradient(125% 105% at 50% 42%, #000 52%, transparent 100%);
+  mask-image: radial-gradient(125% 105% at 50% 42%, #000 52%, transparent 100%);
+}
+.rk-stars {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0.28;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.9) 1px, transparent 1.6px),
+    radial-gradient(rgba(170, 190, 255, 0.7) 1px, transparent 1.6px);
+  background-size: 64px 64px, 96px 96px;
+  background-position: 0 0, 32px 28px;
+}
+.rk-top {
+  position: absolute; top: 12px; left: 16px; right: 16px; z-index: 3;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.6px; color: rgba(216, 214, 255, 0.62);
+}
+.rk-top-item { display: inline-flex; align-items: center; gap: 4px; }
+.rk-top-item b { color: #fff; font-weight: 700; }
+.rk-mult {
+  position: absolute; top: 30px; left: 18px; z-index: 3;
+  font: 700 clamp(34px, 11vw, 52px) / 1 var(--font-display); letter-spacing: -1.5px;
+  color: #ff3d7f; text-shadow: 0 0 26px rgba(255, 61, 127, 0.6), 0 4px 18px rgba(0, 0, 0, 0.45);
+  transition: color 0.2s;
+}
+.rk-x { font-size: 0.6em; margin-right: 1px; opacity: 0.9; }
+.rk-stage.crashed .rk-mult { color: #ff5b6e; text-shadow: 0 0 26px rgba(255, 60, 80, 0.6), 0 4px 18px rgba(0, 0, 0, 0.45); }
+.rk-stage.cashed .rk-mult { color: #ffd27a; text-shadow: 0 0 26px rgba(247, 193, 74, 0.65), 0 4px 18px rgba(0, 0, 0, 0.45); }
+.rk-chart { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; pointer-events: none; }
+.rk-craft { filter: drop-shadow(0 10px 16px rgba(0, 0, 0, 0.45)); }
+.rk-stage.crashed .rk-craft { opacity: 0.4; filter: grayscale(0.75) drop-shadow(0 8px 14px rgba(0, 0, 0, 0.4)); }
+.rk-flame {
+  transform-box: fill-box; transform-origin: right center;
+  animation: rkFlame 0.14s ease-in-out infinite alternate;
+}
+.rk-coin { transform-box: fill-box; transform-origin: center; animation: rkBob 2.2s ease-in-out infinite; }
+.rk-msg {
+  position: absolute; left: 50%; bottom: 14px; z-index: 4; transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+  font-weight: 700; font-size: 13px; background: rgba(5, 5, 10, 0.74);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  animation: rkMsgIn 0.25s ease-out;
+}
+.rk-msg.bad { color: #ff8a98; border: 1px solid rgba(255, 60, 80, 0.42); }
+.rk-msg.good { color: #5fe0a2; border: 1px solid rgba(95, 224, 162, 0.42); }
+.rk-history { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 4px; scrollbar-width: none; }
+.rk-history::-webkit-scrollbar { display: none; }
+.rk-chip {
+  flex: none; padding: 5px 11px; border-radius: 999px; white-space: nowrap;
+  font: 700 11px var(--font-display); border: 1px solid;
+  animation: rkChipIn 0.25s ease-out;
+}
+.rk-chip[data-tier="1"] { color: #ff8ac0; border-color: rgba(255, 90, 158, 0.45); background: rgba(255, 90, 158, 0.12); }
+.rk-chip[data-tier="2"] { color: #8fb4ff; border-color: rgba(79, 140, 255, 0.45); background: rgba(79, 140, 255, 0.12); }
+.rk-chip[data-tier="3"] { color: #5fe0c0; border-color: rgba(49, 208, 170, 0.45); background: rgba(49, 208, 170, 0.12); }
+.rk-chip[data-tier="4"] { color: #ffd27a; border-color: rgba(247, 193, 74, 0.5); background: rgba(247, 193, 74, 0.14); }
+
+@keyframes rkFlame {
+  from { transform: scaleX(0.82) scaleY(1); }
+  to { transform: scaleX(1.12) scaleY(0.88); }
+}
+@keyframes rkBob {
+  0%, 100% { transform: translateY(0) rotate(-8deg); }
+  50% { transform: translateY(-8px) rotate(8deg); }
+}
+@keyframes rkMsgIn {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes rkChipIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
 
 /* Мины */
 .mines-top { display: flex; justify-content: space-between; }

@@ -222,6 +222,10 @@ export interface ServerRocketGame {
   balance_ton: number;
 }
 
+export interface RocketHistory {
+  items: number[];
+}
+
 export interface UpgradeResult {
   win: boolean;
   roll: number; // 0..1, победа если roll < chance
@@ -408,6 +412,8 @@ export const api = {
     request<ServerRocketGame>("/api/rocket/check", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }) }),
   cashoutRocket: (telegramId: number, sessionId: number) =>
     request<ServerRocketGame>("/api/rocket/cashout", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }) }),
+  rocketHistory: () =>
+    request<RocketHistory>("/api/rocket/history"),
   spend: (telegramId: number, amountStars: number, label: string) =>
     request<{ balance_stars: number; balance_ton: number }>("/api/wallet/spend", {
       method: "POST",

@@ -909,6 +909,23 @@ async def cashout_rocket(
     return result
 
 
+@router.get("/rocket/history")
+async def rocket_history(
+    limit: int = 14,
+    session: AsyncSession = Depends(get_session),
+):
+    """Последние завершённые раунды: множитель, на котором улетела ракета."""
+    rows = (
+        await session.scalars(
+            select(RocketSession)
+            .where(RocketSession.status != "active")
+            .order_by(RocketSession.id.desc())
+            .limit(max(1, min(limit, 30)))
+        )
+    ).all()
+    return {"items": [round(row.crash_milli / 1000, 2) for row in rows]}
+
+
 # ---------------------------------------------------------- зимняя шахта
 
 SNOWFALL_TARGET = 8
