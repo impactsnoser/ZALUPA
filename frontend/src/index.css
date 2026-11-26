@@ -489,16 +489,16 @@ audio#secret-track { display: none; }
   box-shadow: 0 26px 60px -30px rgba(123, 70, 255, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   transition: border-color 0.3s, box-shadow 0.3s;
 }
-.rk-stage.crashed {
+.rk-stage.finished {
   background:
     radial-gradient(120% 90% at 18% 0%, rgba(255, 60, 90, 0.3), transparent 58%),
     radial-gradient(90% 80% at 100% 100%, rgba(255, 60, 90, 0.16), transparent 60%),
     linear-gradient(160deg, #39132a 0%, #1d0a1c 46%, #0c0410 100%);
   border-color: rgba(255, 70, 90, 0.4);
 }
-.rk-stage.cashed {
-  border-color: rgba(247, 193, 74, 0.45);
-  box-shadow: 0 26px 60px -30px rgba(247, 193, 74, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+.rk-stage.countdown {
+  border-color: rgba(247, 193, 74, 0.5);
+  box-shadow: 0 26px 60px -30px rgba(247, 193, 74, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 .rk-grid {
   position: absolute; inset: 0; pointer-events: none;
@@ -530,8 +530,9 @@ audio#secret-track { display: none; }
   color: #ff3d7f; text-shadow: 0 0 18px rgba(255, 61, 127, 0.55);
   will-change: transform; transition: color 0.2s;
 }
-.rk-stage.crashed .rk-mult { color: #ff5b6e; text-shadow: 0 0 18px rgba(255, 60, 80, 0.55); }
-.rk-stage.cashed .rk-mult { color: #ffd27a; text-shadow: 0 0 18px rgba(247, 193, 74, 0.6); }
+.rk-stage.finished .rk-mult { color: #ff5b6e; text-shadow: 0 0 18px rgba(255, 60, 80, 0.55); }
+.rk-stage.countdown .rk-mult { color: #ffd27a; text-shadow: 0 0 18px rgba(247, 193, 74, 0.6); }
+.rk-status { color: rgba(216, 214, 255, 0.75); text-transform: none; letter-spacing: 0.2px; }
 /* Canvas вынесен в отдельный GPU-слой, чтобы его кадры не перерисовывали весь экран. */
 .rk-canvas {
   position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%;
@@ -545,6 +546,7 @@ audio#secret-track { display: none; }
 }
 .rk-msg.bad { color: #ff8a98; border: 1px solid rgba(255, 60, 80, 0.42); }
 .rk-msg.good { color: #5fe0a2; border: 1px solid rgba(95, 224, 162, 0.42); }
+.rk-msg.good.stacked { bottom: 48px; }
 .rk-history { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 4px; scrollbar-width: none; }
 .rk-history::-webkit-scrollbar { display: none; }
 .rk-chip {
@@ -556,6 +558,64 @@ audio#secret-track { display: none; }
 .rk-chip[data-tier="2"] { color: #8fb4ff; border-color: rgba(79, 140, 255, 0.45); background: rgba(79, 140, 255, 0.12); }
 .rk-chip[data-tier="3"] { color: #5fe0c0; border-color: rgba(49, 208, 170, 0.45); background: rgba(49, 208, 170, 0.12); }
 .rk-chip[data-tier="4"] { color: #ffd27a; border-color: rgba(247, 193, 74, 0.5); background: rgba(247, 193, 74, 0.14); }
+
+/* Обратный отсчёт и ожидание в панели */
+.rk-overlay-count {
+  position: absolute; left: 50%; top: 46%; z-index: 4; transform: translate(-50%, -50%);
+  display: grid; justify-items: center; gap: 4px; text-align: center; pointer-events: none;
+}
+.rk-overlay-count span {
+  font: 700 11px var(--font-display); letter-spacing: 1.4px; text-transform: uppercase;
+  color: rgba(226, 222, 255, 0.78);
+}
+.rk-overlay-count b {
+  font: 800 64px / 1 var(--font-display); color: #fff;
+  text-shadow: 0 0 30px rgba(255, 210, 122, 0.75), 0 4px 22px rgba(0, 0, 0, 0.5);
+  animation: rkCountPop 0.9s ease-out infinite;
+}
+.rk-overlay-count.go b { color: #ffd27a; }
+@keyframes rkCountPop {
+  0% { transform: scale(0.7); opacity: 0.25; }
+  35% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.02); opacity: 0.9; }
+}
+
+/* Список ставок игроков в раунде */
+.rk-live {
+  display: grid; gap: 8px; padding: 12px 14px; border-radius: 18px;
+  background: linear-gradient(180deg, rgba(28, 20, 46, 0.92), rgba(11, 8, 20, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.rk-live-head { display: flex; align-items: center; justify-content: space-between; }
+.rk-live-head span { font: 700 11px var(--font-display); letter-spacing: 0.8px; text-transform: uppercase; color: rgba(216, 214, 255, 0.6); }
+.rk-live-head small { color: rgba(216, 214, 255, 0.45); font-size: 11px; }
+.rk-live-row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; min-height: 30px; align-items: center; }
+.rk-live-row::-webkit-scrollbar { display: none; }
+.rk-live-empty { font-size: 12px; color: rgba(216, 214, 255, 0.45); }
+.rk-live-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px 4px 4px; border-radius: 999px; white-space: nowrap;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11px; color: #e9e6ff; animation: rkChipIn 0.2s ease-out;
+}
+.rk-live-chip i {
+  display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: linear-gradient(145deg, #7b46ff, #ff3d7f); color: #fff;
+  font: 700 11px var(--font-display); font-style: normal;
+}
+.rk-live-chip b { color: #ffd27a; font-weight: 700; }
+.rk-live-chip.won { border-color: rgba(95, 224, 162, 0.5); background: rgba(95, 224, 162, 0.12); }
+.rk-live-chip.won b { color: #5fe0a2; }
+.rk-live-chip.lost { opacity: 0.55; border-color: rgba(255, 90, 110, 0.35); }
+
+/* Подсказки под панелью */
+.rk-wait-note {
+  padding: 10px 14px; border-radius: 14px; text-align: center; font-size: 12px; font-weight: 600;
+  color: rgba(226, 222, 255, 0.82); background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.rk-wait-note.good { color: #5fe0a2; border-color: rgba(95, 224, 162, 0.35); background: rgba(95, 224, 162, 0.1); }
+.rk-wait-note.bad { color: #ff8a98; border-color: rgba(255, 90, 110, 0.32); background: rgba(255, 90, 110, 0.08); }
 
 @keyframes rkMsgIn {
   from { opacity: 0; transform: translate(-50%, 6px); }

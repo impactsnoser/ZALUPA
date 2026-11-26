@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, type ServerRocketGame } from "../api";
+import { api, type RocketRound, type RocketRoundStatus } from "../api";
 import { fmt } from "../lib/format";
 import { Ton } from "../ui/Icons";
 
@@ -29,7 +29,7 @@ const H = 260;
 /** Коэффициент роста — должен совпадать с ROCKET_GROWTH на бэкенде. */
 const ROCKET_GROWTH = 0.044445;
 
-/** Кривая множителя: 6·e^(growth·t) − 5. Считаем локально по клиентным часам. */
+/** Кривая множителя: 6·e^(growth·t) − 5 (та же формула, что на сервере). */
 function multFromElapsed(elapsed: number): number {
   if (elapsed <= 0) return 1;
   return Math.max(1, 6 * Math.exp(ROCKET_GROWTH * elapsed) - 5);
@@ -207,33 +207,33 @@ type NumberRef = { current: number };
 type NullableNumberRef = { current: number | null };
 type BoolRef = { current: boolean };
 type TextRef = { current: HTMLSpanElement | null };
-type ServerClockRef = { current: { elapsed: number; receivedAtMs: number } | null };
+type StringRef = { current: string };
+type ClockRef = { current: { elapsed: number; receivedAtMs: number } | null };
 
 /**
  * Вся движущаяся графика рисуется на canvas.
- * Множитель считается по серверному elapsed + клиентскому времени с последнего ответа.
- * Так клиент не убегает вперёд сервера (учитывается сетевая задержка запуска)
- * и не останавливается из-за разницы часов.
+ * Множитель: серверное elapsed + клиентское время с момента ответа.
+ * Статусы waiting/countdown держат ракету на старте, finished — на точке краша.
  */
 function RocketScene({
-  serverClockRef,
+  statusRef,
+  clockRef,
   frozenRef,
   crashedRef,
   multRef,
   cashRef,
   betRef,
   resetRef,
-  serverMultRef,
   shownRef,
 }: {
-  serverClockRef: ServerClockRef;
+  statusRef: StringRef;
+  clockRef: ClockRef;
   frozenRef: NullableNumberRef;
   crashedRef: BoolRef;
   multRef: TextRef;
   cashRef: TextRef;
   betRef: NumberRef;
   resetRef: NumberRef;
-  serverMultRef: NumberRef;
   shownRef: NumberRef;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -273,31 +273,24 @@ function RocketScene({
     const render = () => {
       const time = performance.now() / 1000;
 
-      // Новый раунд — начинаем с единицы без плавного «докатывания» назад.
       if (resetRef.current !== lastReset) {
         lastReset = resetRef.current;
         shown = 1;
       }
 
-      // Целевое значение: серверное elapsed + клиентское время с момента получения ответа.
+      const status = statusRef.current;
       const frozen = frozenRef.current;
       let target: number;
-      if (frozen !== null) {
+      if (status === "finished" && frozen !== null) {
         target = frozen;
-      } else {
-        const clock = serverClockRef.current;
-        let elapsed: number;
-        if (clock) {
-          elapsed = clock.elapsed + (Date.now() - clock.receivedAtMs) / 1000;
-        } else {
-          elapsed = 0;
-        }
+      } else if (status === "flying") {
+        const clock = clockRef.current;
+        const elapsed = clock ? clock.elapsed + (Date.now() - clock.receivedAtMs) / 1000 : 0;
         target = multFromElapsed(elapsed);
-        // Не опускаемся ниже последнего значения сервера (на случай старых бэкендов).
-        if (target < serverMultRef.current) target = serverMultRef.current;
+      } else {
+        target = 1;
       }
 
-      // Лёгкое сглаживание: убирает микропрыжки, но не добавляет задержки.
       shown += (target - shown) * 0.4;
       shownRef.current = shown;
 
@@ -312,16 +305,11 @@ function RocketScene({
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, cssW, cssH);
-
-      // Переходим в координаты сцены 360×260.
       ctx.setTransform((cssW / W) * dpr, 0, 0, (cssH / H) * dpr, 0, 0);
 
       const u = progressOf(shown);
 
-      // призрачная траектория
       strokeCurve(ctx, 1, "rgba(255, 255, 255, 0.06)", 2);
-
-      // пройденный путь
       strokeCurve(ctx, u, "rgba(255, 47, 126, 0.2)", 11);
       const trail = ctx.createLinearGradient(0, H, W, 0);
       trail.addColorStop(0, "#a01a52");
@@ -330,12 +318,10 @@ function RocketScene({
       strokeCurve(ctx, u, trail, 4.6);
       strokeCurve(ctx, u, "rgba(255, 214, 232, 0.55)", 1.2);
 
-      // монеты
       drawCoin(ctx, 268, 88, time, 0);
       drawCoin(ctx, 314, 150, time, 1.7);
       drawCoin(ctx, 224, 110, time, 3.1);
 
-      // ракета парит над кривой: позиция зависит от прогресса, а не от самой линии
       const rx = 118 + (258 - 118) * u;
       const ry = 176 + (96 - 176) * u + Math.sin(time * 3) * 2.5;
       ctx.save();
@@ -357,38 +343,53 @@ function RocketScene({
       observer?.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, [serverClockRef, frozenRef, crashedRef, multRef, cashRef, betRef, resetRef, serverMultRef, shownRef]);
+  }, [statusRef, clockRef, frozenRef, crashedRef, multRef, cashRef, betRef, resetRef, shownRef]);
 
   return <canvas ref={canvasRef} className="rk-canvas" aria-hidden="true" />;
+}
+
+const STATUS_LABEL: Record<RocketRoundStatus, string> = {
+  waiting: "Приём ставок",
+  countdown: "Старт",
+  flying: "В полёте",
+  finished: "Раунд завершён",
+};
+
+function initialOf(name: string): string {
+  const clean = name.replace(/^@/, "").trim();
+  return clean ? clean.slice(0, 1).toUpperCase() : "?";
 }
 
 export default function RocketGame({ balance, starsPerTon, telegramId, onBalance, onChanged, onDeposit }: GameProps) {
   const [bet, setBet] = useState(1);
   const [betInput, setBetInput] = useState("1");
-  const [game, setGame] = useState<ServerRocketGame | null>(null);
+  const [round, setRound] = useState<RocketRound | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<number[]>([]);
 
   const polling = useRef(false);
-  const statusRef = useRef("");
   const multRef = useRef<HTMLSpanElement>(null);
   const cashRef = useRef<HTMLSpanElement>(null);
   const betRef = useRef(1);
+  const statusRef = useRef<string>("waiting");
+  const clockRef = useRef<{ elapsed: number; receivedAtMs: number } | null>(null);
   const frozenRef = useRef<number | null>(null);
   const crashedRef = useRef(false);
   const resetRef = useRef(0);
-  const serverMultRef = useRef(1);
   const shownRef = useRef(1);
-  const serverClockRef = useRef<{ elapsed: number; receivedAtMs: number } | null>(null);
+  const roundIdRef = useRef(0);
+  const lastBalanceRef = useRef<number | null>(null);
+  const prevStatusRef = useRef<string>("");
 
-  const phase =
-    game?.status === "active" ? "running" : game?.status === "lost" ? "crashed" : game?.status === "won" ? "cashed" : "ready";
-  const payout = game?.payout_ton ?? 0;
+  const status = round?.status ?? "waiting";
+  const myBet = round?.my_bet ?? null;
+  const perTon = starsPerTon > 0 ? starsPerTon : 1;
+  const canPlaceBet = (status === "waiting" || status === "countdown") && !myBet;
+  const myBetTon = myBet ? myBet.bet_stars / perTon : 0;
+  betRef.current = myBetTon;
 
-  betRef.current = bet;
-
-  // История последних раундов: настоящая, с бэкенда.
+  // История завершённых раундов.
   function loadHistory() {
     void api
       .rocketHistory()
@@ -400,70 +401,102 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     loadHistory();
   }, []);
 
+  // Опрос общего раунда. Анимация локальная, поэтому даже 300 мс не дают рывков.
   useEffect(() => {
-    if (phase !== "running" || !game) return;
-    const sessionId = game.session_id;
-    const timer = window.setInterval(() => {
-      if (polling.current) return;
+    let stopped = false;
+
+    const tick = () => {
+      if (polling.current || stopped) return;
       polling.current = true;
       void api
-        .checkRocket(telegramId, sessionId)
+        .rocketRound(telegramId)
         .then((result) => {
-          // Сервер прислал elapsed (секунды с начала раунда по серверу).
-          // Запоминаем его и клиентское время получения — между ответами
-          // прибавляем только клиентское время, так нет рассинхрона часов.
-          serverMultRef.current = Math.max(1, result.multiplier);
-          if (typeof result.elapsed === "number" && result.elapsed >= 0) {
-            serverClockRef.current = { elapsed: result.elapsed, receivedAtMs: Date.now() };
+          if (stopped) return;
+
+          // Новый раунд — сбрасываем анимацию с единицы.
+          if (result.round_id !== roundIdRef.current) {
+            roundIdRef.current = result.round_id;
+            resetRef.current += 1;
+            frozenRef.current = null;
           }
 
-          if (result.status !== "active") {
-            frozenRef.current = result.status === "won" ? result.multiplier : (result.crash_multiplier ?? result.multiplier);
-            crashedRef.current = result.status !== "won";
-          }
+          statusRef.current = result.status;
+          crashedRef.current = result.status === "finished";
 
-          // React перерисовываем только при смене статуса — не 3 раза в секунду.
-          if (result.status !== statusRef.current) {
-            statusRef.current = result.status;
-            setGame(result);
-            if (result.status !== "active") {
-              onBalance(result.balance_stars, result.balance_ton);
-              onChanged();
-              loadHistory();
+          if (result.status === "flying") {
+            if (typeof result.elapsed === "number") {
+              clockRef.current = { elapsed: result.elapsed, receivedAtMs: Date.now() };
             }
+            frozenRef.current = null;
+          } else if (result.status === "finished") {
+            frozenRef.current = result.crash_multiplier ?? result.multiplier;
+            clockRef.current = null;
+          } else {
+            clockRef.current = null;
+            frozenRef.current = null;
           }
+
+          // Баланс меняется только после ставки/выкупа — не дёргаем родителя зря.
+          if (lastBalanceRef.current !== result.balance_stars) {
+            lastBalanceRef.current = result.balance_stars;
+            onBalance(result.balance_stars, result.balance_ton);
+          }
+
+          // Раунд завершился — обновляем историю множителей.
+          if (result.status !== prevStatusRef.current) {
+            if (result.status === "finished") loadHistory();
+            prevStatusRef.current = result.status;
+          }
+
+          setRound(result);
         })
-        .catch((err) => setError(err instanceof Error ? err.message : "Не удалось обновить раунд"))
+        .catch(() => undefined)
         .finally(() => {
           polling.current = false;
         });
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [game?.session_id, phase, telegramId, onBalance, onChanged]);
+    };
 
-  async function launch() {
-    if (busy || !Number.isFinite(bet) || bet < 0.01 || bet > 100_000) return;
+    tick();
+    const timer = window.setInterval(tick, 300);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [telegramId, onBalance]);
+
+  async function placeBet() {
+    if (busy || !Number.isFinite(bet) || bet < 0.01) return;
     if (balance < bet) return onDeposit();
-    resetRef.current += 1;
-    serverClockRef.current = null;
-    frozenRef.current = null;
-    crashedRef.current = false;
-    serverMultRef.current = 1;
-    statusRef.current = "active";
     setBusy(true);
     setError("");
     try {
-      const result = await api.startRocket(telegramId, Math.max(1, Math.round(bet * starsPerTon)));
-      if (typeof result.elapsed === "number" && result.elapsed >= 0) {
-        serverClockRef.current = { elapsed: result.elapsed, receivedAtMs: Date.now() };
-      }
-      serverMultRef.current = Math.max(1, result.multiplier);
-      setGame(result);
+      const result = await api.rocketBet(telegramId, Math.max(1, Math.round(bet * starsPerTon)));
+      lastBalanceRef.current = result.balance_stars;
       onBalance(result.balance_stars, result.balance_ton);
       onChanged();
     } catch (err) {
-      statusRef.current = "";
-      setError(err instanceof Error ? err.message : "Не удалось начать раунд");
+      setError(err instanceof Error ? err.message : "Не удалось сделать ставку");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cashout() {
+    if (busy || !round || myBet?.status !== "active") return;
+    setBusy(true);
+    setError("");
+    // Замораживаем число на клике: во время запроса оно не должно расти.
+    frozenRef.current = shownRef.current;
+    try {
+      const result = await api.rocketCashout(telegramId, round.round_id);
+      if (result.my_bet?.status === "won" && result.my_bet.payout_stars > 0) {
+        lastBalanceRef.current = result.balance_stars;
+        onBalance(result.balance_stars, result.balance_ton);
+        onChanged();
+      }
+      setRound((prev) => (prev ? { ...prev, ...result } : result));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось забрать выигрыш");
     } finally {
       setBusy(false);
     }
@@ -481,44 +514,24 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     setBet(Number(normalized) || 0);
   }
 
-  async function cash() {
-    if (!game || busy || phase !== "running") return;
-    setBusy(true);
-    setError("");
-    try {
-      const result = await api.cashoutRocket(telegramId, game.session_id);
-      // Берём точное серверное значение — и число на экране, и выплата будут одинаковыми.
-      serverClockRef.current = null;
-      frozenRef.current = result.multiplier;
-      shownRef.current = result.multiplier;
-      crashedRef.current = false;
-      serverMultRef.current = Math.max(1, result.multiplier);
-      statusRef.current = result.status;
-      setGame(result);
-      onBalance(result.balance_stars, result.balance_ton);
-      onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось забрать выигрыш");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const crashMult = game?.crash_multiplier ?? game?.multiplier ?? 1;
+  const countdown = round?.countdown_seconds ?? 0;
+  const waitingLeft = round?.waiting_seconds ?? 0;
+  const crashMult = round?.crash_multiplier ?? null;
+  const cashedOut = myBet?.status === "won";
+  const lost = myBet?.status === "lost";
+  const cashoutMult = myBet?.cashout_milli ? myBet.cashout_milli / 1000 : null;
 
   return (
     <div className="stack">
-      <div className={`rk-stage ${phase}`}>
+      <div className={`rk-stage ${status}`}>
         <div className="rk-grid" aria-hidden="true" />
         <div className="rk-stars" aria-hidden="true" />
 
         <div className="rk-top">
           <span className="rk-top-item">
-            СТАВКА <Ton size={12} /> <b>{fmt(bet)}</b>
-          </span>
-          <span className="rk-top-item">
             ВСЕГО <Ton size={12} /> <b>{fmt(balance)}</b>
           </span>
+          <span className="rk-top-item rk-status">{STATUS_LABEL[status]}</span>
         </div>
 
         <b className="rk-mult">
@@ -526,19 +539,58 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
         </b>
 
         <RocketScene
-          serverClockRef={serverClockRef}
+          statusRef={statusRef}
+          clockRef={clockRef}
           frozenRef={frozenRef}
           crashedRef={crashedRef}
           multRef={multRef}
           cashRef={cashRef}
           betRef={betRef}
           resetRef={resetRef}
-          serverMultRef={serverMultRef}
           shownRef={shownRef}
         />
 
-        {phase === "crashed" && <p className="rk-msg bad">Улетела на {fmt(crashMult)}×</p>}
-        {phase === "cashed" && <p className="rk-msg good">Забрал {fmt(payout)} TON</p>}
+        {status === "waiting" && (
+          <div className="rk-overlay-count">
+            <span>Раунд начнётся через</span>
+            <b>{Math.max(0, Math.ceil(waitingLeft))}</b>
+          </div>
+        )}
+        {status === "countdown" && (
+          <div className="rk-overlay-count go">
+            <span>Поехали!</span>
+            <b>{countdown || 3}</b>
+          </div>
+        )}
+
+        {status === "finished" && (
+          <p className="rk-msg bad">Улетела на {crashMult !== null ? fmt(crashMult) : "?"}×</p>
+        )}
+        {cashedOut && !lost && (
+          <p className={`rk-msg good${status === "finished" ? " stacked" : ""}`}>
+            Забрал {fmt(myBet?.payout_stars ? myBet.payout_stars / perTon : 0)} TON · ×{cashoutMult ? fmt(cashoutMult) : "—"}
+          </p>
+        )}
+      </div>
+
+      {/* Ставки игроков в текущем раунде */}
+      <div className="rk-live">
+        <div className="rk-live-head">
+          <span>Ставки в раунде</span>
+          <small>
+            {round?.bets.length ?? 0} {round?.bets.length === 1 ? "игрок" : "игроков"}
+          </small>
+        </div>
+        <div className="rk-live-row">
+          {(round?.bets.length ?? 0) === 0 && <span className="rk-live-empty">Пока никто не поставил — будь первым</span>}
+          {round?.bets.map((b) => (
+            <span key={b.user_id} className={`rk-live-chip ${b.status}`}>
+              <i>{initialOf(b.name)}</i>
+              <span>{b.name}</span>
+              <b>{fmt(b.bet_stars / perTon)}</b>
+            </span>
+          ))}
+        </div>
       </div>
 
       {history.length > 0 && (
@@ -553,46 +605,61 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
 
       {error && <p className="notice bad">{error}</p>}
 
-      <div className="rocket-bet-field">
-        <span className="rocket-bet-caption">ТВОЯ СТАВКА · TON</span>
-        <div className="stepper bet-control rocket-bet-stepper">
-          <button onClick={() => updateBet(bet - 0.5)} disabled={phase === "running" || busy} aria-label="Меньше ставка">
-            −
+      {/* Управление ставкой */}
+      {canPlaceBet && (
+        <>
+          <div className="rocket-bet-field">
+            <span className="rocket-bet-caption">ТВОЯ СТАВКА · TON</span>
+            <div className="stepper bet-control rocket-bet-stepper">
+              <button onClick={() => updateBet(bet - 0.5)} disabled={busy} aria-label="Меньше ставка">
+                −
+              </button>
+              <label className="bet-value" aria-label="Ставка в TON">
+                <Ton size={16} />
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  aria-label="Введите сумму ставки в TON"
+                  value={betInput}
+                  onChange={(event) => editBet(event.target.value)}
+                />
+              </label>
+              <button onClick={() => updateBet(bet + 0.5)} disabled={busy} aria-label="Больше ставка">
+                +
+              </button>
+            </div>
+            <span className="rocket-bet-hint">Ставка принимается до старта раунда</span>
+          </div>
+          <button className="btn primary wide" onClick={() => void placeBet()} disabled={busy || !Number.isFinite(bet) || bet < 0.01}>
+            {busy ? "Ставим…" : "Сделать ставку"}
           </button>
-          <label className="bet-value" aria-label="Ставка в TON">
-            <Ton size={16} />
-            {phase === "running" ? (
-              <b>{fmt(bet)}</b>
-            ) : (
-              <input
-                type="text"
-                inputMode="decimal"
-                aria-label="Введите сумму ставки в TON"
-                value={betInput}
-                onChange={(event) => editBet(event.target.value)}
-              />
-            )}
-          </label>
-          <button onClick={() => updateBet(bet + 0.5)} disabled={phase === "running" || busy} aria-label="Больше ставка">
-            +
-          </button>
-        </div>
-        <span className="rocket-bet-hint">Нажми на сумму, чтобы изменить</span>
-      </div>
+        </>
+      )}
 
-      {phase === "running" ? (
-        <button className="btn gold wide" onClick={() => void cash()} disabled={busy}>
-          {busy ? "Забираем…" : <>Забрать <b ref={cashRef} /></>}
-        </button>
-      ) : (
-        <button
-          className="btn primary wide"
-          onClick={() => void launch()}
-          disabled={busy || !Number.isFinite(bet) || bet < 0.01 || bet > 100_000}
-        >
-          {busy ? "Обработка…" : phase === "ready" ? "Сделать ставку" : "Сыграть ещё"}
+      {myBet?.status === "active" && status === "flying" && (
+        <button className="btn gold wide" onClick={() => void cashout()} disabled={busy}>
+          {busy ? "Забираем…" : <>Забрать <b ref={cashRef} /> TON</>}
         </button>
       )}
+
+      {myBet?.status === "active" && (status === "waiting" || status === "countdown") && (
+        <div className="rk-wait-note">
+          Ставка {fmt(myBetTon)} TON принята · ждём старт
+        </div>
+      )}
+
+      {!myBet && !canPlaceBet && (
+        <div className="rk-wait-note">
+          {status === "finished"
+            ? "Раунд завершён — следующий стартует через пару секунд"
+            : "Раунд уже идёт. Следующая ставка — через пару секунд."}
+        </div>
+      )}
+
+      {cashedOut && (
+        <div className="rk-wait-note good">Выигрыш {fmt(myBet?.payout_stars ? myBet.payout_stars / perTon : 0)} TON зачислен</div>
+      )}
+      {lost && <div className="rk-wait-note bad">В этом раунде не успел забрать</div>}
     </div>
   );
 }

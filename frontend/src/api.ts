@@ -209,19 +209,43 @@ export interface ServerMinesGame {
   balance_ton: number;
 }
 
-export interface ServerRocketGame {
-  session_id: number;
-  status: "active" | "lost" | "won" | "abandoned";
+export type RocketRoundStatus = "waiting" | "countdown" | "flying" | "finished";
+
+export interface RocketBetInfo {
+  user_id: number;
+  name: string;
   bet_stars: number;
-  bet_ton: number;
+  status: "active" | "won" | "lost";
+}
+
+export interface RocketMyBet {
+  bet_stars: number;
+  status: "active" | "won" | "lost";
+  cashout_milli: number | null;
+  payout_stars: number;
+}
+
+export interface RocketRound {
+  round_id: number;
+  status: RocketRoundStatus;
   multiplier: number;
   crash_multiplier: number | null;
-  /** Сколько секунд прошло с начала раунда на момент ответа сервера. */
-  elapsed?: number;
-  /** Unix-время сервера (секунды) в момент формирования ответа. */
-  server_time?: number;
-  payout_stars: number;
-  payout_ton: number;
+  /** Осталось секунд отсчёта (3, 2, 1) — только в статусе countdown. */
+  countdown_seconds: number | null;
+  /** Осталось секунд приёма ставок — только в статусе waiting. */
+  waiting_seconds: number | null;
+  /** Секунды полёта — только в статусе flying. */
+  elapsed: number | null;
+  my_bet: RocketMyBet | null;
+  bets: RocketBetInfo[];
+  balance_stars: number;
+  balance_ton: number;
+}
+
+export interface RocketBetResult {
+  round_id: number;
+  status: RocketRoundStatus;
+  bet_stars: number;
   balance_stars: number;
   balance_ton: number;
 }
@@ -410,12 +434,12 @@ export const api = {
     request<ServerMinesGame>("/api/mines/open", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId, cell }) }),
   cashoutMines: (telegramId: number, sessionId: number) =>
     request<ServerMinesGame>("/api/mines/cashout", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }) }),
-  startRocket: (telegramId: number, betStars: number) =>
-    request<ServerRocketGame>("/api/rocket/start", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, bet_stars: betStars }) }),
-  checkRocket: (telegramId: number, sessionId: number) =>
-    request<ServerRocketGame>("/api/rocket/check", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }) }),
-  cashoutRocket: (telegramId: number, sessionId: number) =>
-    request<ServerRocketGame>("/api/rocket/cashout", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, session_id: sessionId }) }),
+  rocketRound: (telegramId: number) =>
+    request<RocketRound>(`/api/rocket/round?telegram_id=${telegramId}`),
+  rocketBet: (telegramId: number, betStars: number) =>
+    request<RocketBetResult>("/api/rocket/bet", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, bet_stars: betStars }) }),
+  rocketCashout: (telegramId: number, roundId: number) =>
+    request<RocketRound>("/api/rocket/cashout", { method: "POST", body: JSON.stringify({ telegram_id: telegramId, round_id: roundId }) }),
   rocketHistory: () =>
     request<RocketHistory>("/api/rocket/history"),
   spend: (telegramId: number, amountStars: number, label: string) =>

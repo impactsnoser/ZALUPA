@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import json
 import secrets
@@ -26,7 +27,8 @@ from database import (
     Gift,
     InventoryItem,
     MinesSession,
-    RocketSession,
+    RocketBet,
+    RocketRound,
     SnowfallSession,
     User,
     get_session,
@@ -726,74 +728,242 @@ def _to_utc(value: datetime | None) -> datetime:
     return value
 
 
+def _seconds_since(now: datetime, moment: datetime | None) -> float:
+    if moment is None:
+        return 0.0
+    return (now - _to_utc(moment)).total_seconds()
+
+
+# ------------------------------ ракета (мультиплеер, общие раунды) ------------------------------
+
+ROCKET_WAITING_SEC = 5      # сколько секунд принимаются ставки перед стартом раунда
+ROCKET_COUNTDOWN_SEC = 3    # обратный отсчёт 3 → 2 → 1
+ROCKET_INTER_ROUND_SEC = 2  # пауза между раундами
+
+# Сериализует переходы состояний раунда: параллельные запросы не создадут два раунда.
+_ROUND_LOCK = asyncio.Lock()
+
+
 def _rocket_multiplier(elapsed: float) -> float:
-    """Плавная кривая, совпадающая с визуальной анимацией на клиенте."""
+    """Плавная кривая множителя: 6·e^(growth·t) − 5 (одинаково на сервере и клиенте)."""
     if elapsed <= 0:
         return 1.0
     return max(1.0, 6 * math.exp(ROCKET_GROWTH * elapsed) - 5)
 
 
-def _rocket_state(game: RocketSession, user: User) -> dict:
-    now = datetime.now(timezone.utc)
-    started = _to_utc(game.started_at)
-    elapsed = (now - started).total_seconds()
-    crash = game.crash_milli / 1000
+async def _advance_round_state(session: AsyncSession) -> RocketRound:
+    """Продвигает автомат состояний текущего раунда (ожидание → отсчёт → полёт → finished)."""
+    round_ = (
+        await session.scalars(select(RocketRound).order_by(RocketRound.id.desc()).limit(1))
+    ).first()
 
-    if game.status == "won":
-        multiplier = (game.cashout_milli or 0) / 1000
-        current = multiplier
-    elif game.status in {"lost", "abandoned"}:
-        multiplier = crash
-        current = crash
-    else:
-        current = min(_rocket_multiplier(elapsed), crash)
+    now = datetime.now(timezone.utc)
+
+    if round_ is None:
+        round_ = RocketRound(status="waiting", created_at=now)
+        session.add(round_)
+        await session.flush()
+        return round_
+
+    if round_.status == "waiting":
+        if _seconds_since(now, round_.created_at) >= ROCKET_WAITING_SEC:
+            round_.status = "countdown"
+            round_.countdown_started_at = now
+
+    elif round_.status == "countdown" and round_.countdown_started_at:
+        if _seconds_since(now, round_.countdown_started_at) >= ROCKET_COUNTDOWN_SEC:
+            round_.status = "flying"
+            round_.flying_started_at = now
+            roll = secrets.randbelow(1_000_000) / 1_000_000
+            return_factor = await get_global_return_factor(session)
+            crash = min(ROCKET_MAX_MULTIPLIER, max(1.01, ROCKET_RTP * return_factor / (1 - roll)))
+            round_.crash_milli = max(1010, int(round(crash * 1000)))
+
+    elif round_.status == "flying" and round_.flying_started_at and round_.crash_milli:
+        elapsed = _seconds_since(now, round_.flying_started_at)
+        current = _rocket_multiplier(elapsed)
+        crash = round_.crash_milli / 1000
+        if current >= crash:
+            bets = (
+                await session.scalars(
+                    select(RocketBet).where(
+                        RocketBet.round_id == round_.id,
+                        RocketBet.status == "active",
+                    )
+                )
+            ).all()
+            for bet in bets:
+                bet.status = "lost"
+            round_.status = "finished"
+            round_.finished_at = now
+
+    elif round_.status == "finished" and round_.finished_at:
+        if _seconds_since(now, round_.finished_at) >= ROCKET_INTER_ROUND_SEC:
+            new_round = RocketRound(status="waiting", created_at=now)
+            session.add(new_round)
+            await session.flush()
+            return new_round
+
+    await session.flush()
+    return round_
+
+
+async def _advance_round_state_tx(session: AsyncSession) -> int:
+    """Продвигает раунд в отдельной короткой транзакции. Возвращает id актуального раунда.
+
+    Лок держится только на время перехода фаз, поэтому параллельные опросы
+    не создают по два раунда и не перезаписывают точки краша.
+    """
+    async with _ROUND_LOCK:
+        async with session.begin():
+            round_ = await _advance_round_state(session)
+            return round_.id
+
+
+def _round_state_dict(round_: RocketRound, my_bet: RocketBet | None) -> dict:
+    now = datetime.now(timezone.utc)
+    status = round_.status
+    multiplier = 1.0
+    elapsed = None
+    countdown_left = None
+    waiting_left = None
+
+    if status == "waiting" and round_.created_at:
+        waiting_left = max(0.0, ROCKET_WAITING_SEC - _seconds_since(now, round_.created_at))
+
+    elif status == "countdown" and round_.countdown_started_at:
+        left = ROCKET_COUNTDOWN_SEC - _seconds_since(now, round_.countdown_started_at)
+        countdown_left = max(0, int(left) + 1)  # 3, 2, 1
+
+    elif status == "flying" and round_.flying_started_at:
+        elapsed = _seconds_since(now, round_.flying_started_at)
+        multiplier = _rocket_multiplier(elapsed)
+        if round_.crash_milli and multiplier >= round_.crash_milli / 1000:
+            multiplier = round_.crash_milli / 1000
+
+    crash_multiplier = None
+    if status == "finished" and round_.crash_milli:
+        crash_multiplier = round(round_.crash_milli / 1000, 2)
 
     return {
-        "session_id": game.id,
-        "status": game.status,
-        "bet_stars": game.bet_stars,
-        "bet_ton": stars_to_ton(game.bet_stars),
-        "multiplier": round(current, 2),
-        # Точку падения показываем только после завершения партии.
-        "crash_multiplier": round(crash, 2) if game.status != "active" else None,
-        # Сколько секунд идёт раунд и какое время было на сервере в момент ответа:
-        # клиент считает множитель сам по этой формуле, поэтому анимация не дёргается.
-        "elapsed": round(elapsed, 3),
-        "server_time": now.timestamp(),
-        "payout_stars": game.payout_stars,
-        "payout_ton": stars_to_ton(game.payout_stars),
-        "balance_stars": user.balance_stars,
-        "balance_ton": stars_to_ton(user.balance_stars),
+        "round_id": round_.id,
+        "status": status,
+        "multiplier": round(multiplier, 2),
+        "crash_multiplier": crash_multiplier,
+        "countdown_seconds": countdown_left,
+        "waiting_seconds": round(waiting_left, 1) if waiting_left is not None else None,
+        "elapsed": round(elapsed, 3) if elapsed is not None else None,
+        "my_bet": (
+            {
+                "bet_stars": my_bet.bet_stars,
+                "status": my_bet.status,
+                "cashout_milli": my_bet.cashout_milli,
+                "payout_stars": my_bet.payout_stars,
+            }
+            if my_bet
+            else None
+        ),
     }
 
 
-class RocketStartRequest(BaseModel):
+class RocketBetRequest(BaseModel):
     telegram_id: int
     bet_stars: int = Field(ge=1, le=10_000_000)
 
 
-@router.post("/rocket/start")
-async def start_rocket(
-    req: RocketStartRequest,
+class RocketCashoutRequest(BaseModel):
+    telegram_id: int
+    round_id: int
+
+
+@router.get("/rocket/round")
+async def rocket_round(
+    telegram_id: int,
     session: AsyncSession = Depends(get_session),
     init_data: str | None = Depends(get_init_data),
 ):
+    """Текущий раунд: стадия, множитель, ставки всех игроков и ваша ставка."""
+    verify_telegram_id(telegram_id, init_data)
+
+    round_id = await _advance_round_state_tx(session)
+
+    async with session.begin():
+        user = await _user_by_telegram_id(session, telegram_id, lock=True)
+        round_ = await session.get(RocketRound, round_id)
+        if round_ is None:
+            raise HTTPException(status_code=500, detail="Раунд не найден")
+
+        # Ставки всех игроков в этом раунде (одним запросом с именами)
+        rows = (
+            await session.execute(
+                select(RocketBet, User)
+                .join(User, User.id == RocketBet.user_id)
+                .where(RocketBet.round_id == round_.id)
+                .order_by(RocketBet.created_at.asc())
+            )
+        ).all()
+
+        # Моя ставка в этом раунде
+        my_bet = (
+            await session.scalars(
+                select(RocketBet).where(
+                    RocketBet.round_id == round_.id,
+                    RocketBet.user_id == user.id,
+                )
+            )
+        ).first()
+
+        bet_list = [
+            {
+                "user_id": bettor.telegram_id,
+                "name": bettor.username or str(bettor.telegram_id),
+                "bet_stars": bet.bet_stars,
+                "status": bet.status,
+            }
+            for bet, bettor in rows
+        ]
+
+        result = {
+            **_round_state_dict(round_, my_bet),
+            "bets": bet_list,
+            "balance_stars": user.balance_stars,
+            "balance_ton": stars_to_ton(user.balance_stars),
+        }
+
+    return result
+
+
+@router.post("/rocket/bet")
+async def rocket_bet(
+    req: RocketBetRequest,
+    session: AsyncSession = Depends(get_session),
+    init_data: str | None = Depends(get_init_data),
+):
+    """Сделать ставку в текущем раунде (до начала полёта)."""
     verify_telegram_id(req.telegram_id, init_data)
+
+    round_id = await _advance_round_state_tx(session)
 
     async with session.begin():
         user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
+        round_ = await session.get(RocketRound, round_id)
+        if round_ is None:
+            raise HTTPException(status_code=500, detail="Раунд не найден")
 
-        active_games = (
+        if round_.status not in {"waiting", "countdown"}:
+            raise HTTPException(status_code=409, detail="Раунд уже летит, ждите следующий")
+
+        # Блокируем строку раунда, чтобы два запроса одного игрока не создали две ставки.
+        existing = (
             await session.scalars(
-                select(RocketSession).where(
-                    RocketSession.user_id == user.id,
-                    RocketSession.status == "active",
+                select(RocketBet).where(
+                    RocketBet.round_id == round_.id,
+                    RocketBet.user_id == user.id,
                 )
             )
-        ).all()
-        for active in active_games:
-            active.status = "abandoned"
-            active.finished_at = datetime.now(timezone.utc)
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Вы уже сделали ставку в этом раунде")
 
         if user.balance_stars < req.bet_stars:
             raise HTTPException(status_code=400, detail="Недостаточно средств")
@@ -807,109 +977,88 @@ async def start_rocket(
             label="Ракетка: ставка",
         )
 
-        # Распределение с постоянным RTP 95%: P(crash >= x) = RTP / x.
-        # Точка падения никогда не раскрывается до завершения партии.
-        roll = secrets.randbelow(1_000_000) / 1_000_000
-        return_factor = await get_global_return_factor(session)
-        crash = min(ROCKET_MAX_MULTIPLIER, max(1.01, ROCKET_RTP * return_factor / (1 - roll)))
-        game = RocketSession(
+        bet = RocketBet(
+            round_id=round_.id,
             user_id=user.id,
             bet_stars=req.bet_stars,
-            return_factor=return_factor,
-            crash_milli=max(1010, int(round(crash * 1000))),
             status="active",
-            payout_stars=0,
-            started_at=datetime.now(timezone.utc),
         )
-        session.add(game)
+        session.add(bet)
         await session.flush()
 
-        result = _rocket_state(game, user)
+        result = {
+            "round_id": round_.id,
+            "status": round_.status,
+            "bet_stars": req.bet_stars,
+            "balance_stars": user.balance_stars,
+            "balance_ton": stars_to_ton(user.balance_stars),
+        }
 
     return result
 
 
-class RocketCheckRequest(MinesActionRequest):
-    pass
-
-
-@router.post("/rocket/check")
-async def check_rocket(
-    req: RocketCheckRequest,
-    session: AsyncSession = Depends(get_session),
-    init_data: str | None = Depends(get_init_data),
-):
-    verify_telegram_id(req.telegram_id, init_data)
-
-    async with session.begin():
-        user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
-        game = await session.scalar(
-            select(RocketSession)
-            .where(
-                RocketSession.id == req.session_id,
-                RocketSession.user_id == user.id,
-            )
-            .with_for_update()
-        )
-        if game is None:
-            raise HTTPException(status_code=404, detail="Партия не найдена")
-
-        state = _rocket_state(game, user)
-        if game.status == "active" and state["multiplier"] >= game.crash_milli / 1000:
-            game.status = "lost"
-            game.finished_at = datetime.now(timezone.utc)
-            state = _rocket_state(game, user)
-
-    return state
-
-
 @router.post("/rocket/cashout")
-async def cashout_rocket(
-    req: RocketCheckRequest,
+async def rocket_cashout(
+    req: RocketCashoutRequest,
     session: AsyncSession = Depends(get_session),
     init_data: str | None = Depends(get_init_data),
 ):
+    """Забрать выигрыш по текущему множителю (во время полёта)."""
     verify_telegram_id(req.telegram_id, init_data)
+
+    round_id = await _advance_round_state_tx(session)
 
     async with session.begin():
         user = await _user_by_telegram_id(session, req.telegram_id, lock=True)
-        game = await session.scalar(
-            select(RocketSession)
-            .where(
-                RocketSession.id == req.session_id,
-                RocketSession.user_id == user.id,
-            )
-            .with_for_update()
-        )
-        if game is None:
-            raise HTTPException(status_code=404, detail="Партия не найдена")
-        if game.status == "won":
-            raise HTTPException(status_code=409, detail="Выигрыш уже забран")
-        if game.status != "active":
-            return _rocket_state(game, user)
+        round_ = await session.get(RocketRound, round_id)
+        if round_ is None:
+            raise HTTPException(status_code=500, detail="Раунд не найден")
 
-        state = _rocket_state(game, user)
-        if state["multiplier"] >= game.crash_milli / 1000:
-            game.status = "lost"
-            game.finished_at = datetime.now(timezone.utc)
-            result = _rocket_state(game, user)
+        if round_.status != "flying":
+            raise HTTPException(status_code=409, detail="Раунд не в полёте")
+
+        bet = (
+            await session.scalars(
+                select(RocketBet)
+                .where(
+                    RocketBet.round_id == round_.id,
+                    RocketBet.user_id == user.id,
+                    RocketBet.status == "active",
+                )
+                .with_for_update()
+            )
+        ).first()
+        if bet is None:
+            raise HTTPException(status_code=404, detail="Ваша ставка не найдена в этом раунде")
+
+        now = datetime.now(timezone.utc)
+        elapsed = (now - round_.flying_started_at).total_seconds() if round_.flying_started_at else 0
+        multiplier = _rocket_multiplier(elapsed)
+        crash = round_.crash_milli / 1000 if round_.crash_milli else float("inf")
+
+        if multiplier >= crash:
+            bet.status = "lost"
+            round_.status = "finished"
+            round_.finished_at = now
+            result = _round_state_dict(round_, bet)
         else:
-            multiplier = max(1.0, state["multiplier"])
-            payout = max(1, int(round(game.bet_stars * multiplier)))
+            payout = max(1, int(round(bet.bet_stars * multiplier)))
             user.balance_stars += payout
-            game.payout_stars = payout
-            game.cashout_milli = int(round(multiplier * 1000))
-            game.status = "won"
-            game.finished_at = datetime.now(timezone.utc)
+            bet.status = "won"
+            bet.cashout_milli = int(round(multiplier * 1000))
+            bet.payout_stars = payout
             _add_transaction(
                 session,
                 user,
                 amount=payout,
                 kind="rocket_win",
                 label="Ракетка: выигрыш",
-                reference=f"rocket:{game.id}",
+                reference=f"rocket:{round_.id}",
             )
-            result = _rocket_state(game, user)
+            result = _round_state_dict(round_, bet)
+
+        result["balance_stars"] = user.balance_stars
+        result["balance_ton"] = stars_to_ton(user.balance_stars)
 
     return result
 
@@ -922,13 +1071,13 @@ async def rocket_history(
     """Последние завершённые раунды: множитель, на котором улетела ракета."""
     rows = (
         await session.scalars(
-            select(RocketSession)
-            .where(RocketSession.status != "active")
-            .order_by(RocketSession.id.desc())
+            select(RocketRound)
+            .where(RocketRound.status == "finished")
+            .order_by(RocketRound.id.desc())
             .limit(max(1, min(limit, 30)))
         )
     ).all()
-    return {"items": [round(row.crash_milli / 1000, 2) for row in rows]}
+    return {"items": [round(row.crash_milli / 1000, 2) for row in rows if row.crash_milli]}
 
 
 # ---------------------------------------------------------- зимняя шахта

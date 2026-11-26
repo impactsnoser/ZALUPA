@@ -283,6 +283,50 @@ class RocketSession(Base):
     )
 
 
+class RocketRound(Base):
+    """Общий мультиплеерный раунд «Ракетки». Один на всех игроков."""
+    __tablename__ = "rocket_rounds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # waiting (ставки принимаются) → countdown (3 2 1) → flying (ракета летит) → finished
+    status: Mapped[str] = mapped_column(String, nullable=False, default="waiting")
+    crash_milli: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    countdown_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    flying_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class RocketBet(Base):
+    """Ставка игрока в конкретном раунде."""
+    __tablename__ = "rocket_bets"
+    __table_args__ = (UniqueConstraint("round_id", "user_id", name="uq_rocket_bet_round_user"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    round_id: Mapped[int] = mapped_column(
+        ForeignKey("rocket_rounds.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    bet_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    # active → won (забрал до краша) / lost (улетела до забора)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    cashout_milli: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    payout_stars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class SnowfallSession(Base):
     """Серверный раунд зимней игры с сохранёнными блоками и сундуком."""
 
