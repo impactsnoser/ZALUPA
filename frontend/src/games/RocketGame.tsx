@@ -29,7 +29,7 @@ const H = 260;
 /** Коэффициент роста — должен совпадать с ROCKET_GROWTH на бэкенде. */
 const ROCKET_GROWTH = 0.08889;
 
-/** Кривая множителя: 6·e^(growth·t) − 5. Считаем её локально, чтобы анимация была плавной. */
+/** Кривая множителя: 6·e^(growth·t) − 5. Считаем локально по клиентным часам. */
 function multFromElapsed(elapsed: number): number {
   if (elapsed <= 0) return 1;
   return Math.max(1, 6 * Math.exp(ROCKET_GROWTH * elapsed) - 5);
@@ -207,15 +207,14 @@ type NumberRef = { current: number };
 type NullableNumberRef = { current: number | null };
 type BoolRef = { current: boolean };
 type TextRef = { current: HTMLSpanElement | null };
-type ClockRef = { current: { elapsed: number; serverTimeMs: number } | null };
 
 /**
  * Вся движущаяся графика рисуется на canvas.
- * Множитель считается локально по формуле сервера, поэтому кадры не зависят от сети
- * и не дёргаются при обновлениях.
+ * Множитель считается по клиентным часам (Date.now − время запуска),
+ * поэтому анимация никогда не останавливается из-за разницы часов с сервером.
  */
 function RocketScene({
-  clockRef,
+  launchTimeRef,
   frozenRef,
   crashedRef,
   multRef,
@@ -225,7 +224,7 @@ function RocketScene({
   serverMultRef,
   shownRef,
 }: {
-  clockRef: ClockRef;
+  launchTimeRef: NumberRef;
   frozenRef: NullableNumberRef;
   crashedRef: BoolRef;
   multRef: TextRef;
@@ -278,18 +277,16 @@ function RocketScene({
         shown = 1;
       }
 
-      // Целевое значение: локальные часы по формуле сервера, а не «догоняем» ответы.
+      // Целевое значение: клиентные часы по формуле сервера.
       const frozen = frozenRef.current;
-      const clock = clockRef.current;
       let target: number;
       if (frozen !== null) {
         target = frozen;
-      } else if (clock) {
-        const elapsed = clock.elapsed + (Date.now() - clock.serverTimeMs) / 1000;
-        target = multFromElapsed(elapsed);
       } else {
-        // Старый бэкенд без elapsed/server_time — держимся последнего значения сервера.
-        target = serverMultRef.current;
+        const elapsed = (Date.now() - launchTimeRef.current) / 1000;
+        target = multFromElapsed(elapsed);
+        // Поддерживаем связь с серверным множителем (на случай старых бэкендов).
+        if (target < serverMultRef.current) target = serverMultRef.current;
       }
 
       // Лёгкое сглаживание: убирает микропрыжки, но не добавляет задержки.
@@ -352,7 +349,7 @@ function RocketScene({
       observer?.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, [clockRef, frozenRef, crashedRef, multRef, cashRef, betRef, resetRef, serverMultRef, shownRef]);
+  }, [launchTimeRef, frozenRef, crashedRef, multRef, cashRef, betRef, resetRef, serverMultRef, shownRef]);
 
   return <canvas ref={canvasRef} className="rk-canvas" aria-hidden="true" />;
 }
@@ -370,7 +367,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
   const multRef = useRef<HTMLSpanElement>(null);
   const cashRef = useRef<HTMLSpanElement>(null);
   const betRef = useRef(1);
-  const clockRef = useRef<{ elapsed: number; serverTimeMs: number } | null>(null);
+  const launchTimeRef = useRef(0);
   const frozenRef = useRef<number | null>(null);
   const crashedRef = useRef(false);
   const resetRef = useRef(0);
@@ -404,10 +401,10 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
       void api
         .checkRocket(telegramId, sessionId)
         .then((result) => {
-          // Синхронизируем локальные часы с сервером — дальше множитель считаем сами.
+          // Синхронизируем клиентное время с сервером, если прислал elapsed.
           serverMultRef.current = Math.max(1, result.multiplier);
-          if (typeof result.elapsed === "number" && typeof result.server_time === "number") {
-            clockRef.current = { elapsed: result.elapsed, serverTimeMs: result.server_time * 1000 };
+          if (typeof result.elapsed === "number" && result.elapsed > 0) {
+            launchTimeRef.current = Date.now() - result.elapsed * 1000;
           }
 
           if (result.status !== "active") {
@@ -438,7 +435,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     if (busy || !Number.isFinite(bet) || bet < 0.01 || bet > 100_000) return;
     if (balance < bet) return onDeposit();
     resetRef.current += 1;
-    clockRef.current = null;
+    launchTimeRef.current = Date.now();
     frozenRef.current = null;
     crashedRef.current = false;
     serverMultRef.current = 1;
@@ -447,10 +444,11 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     setError("");
     try {
       const result = await api.startRocket(telegramId, Math.max(1, Math.round(bet * starsPerTon)));
-      serverMultRef.current = Math.max(1, result.multiplier);
-      if (typeof result.elapsed === "number" && typeof result.server_time === "number") {
-        clockRef.current = { elapsed: result.elapsed, serverTimeMs: result.server_time * 1000 };
+      // Корректируем время запуска по серверу, если прислал elapsed.
+      if (typeof result.elapsed === "number" && result.elapsed > 0) {
+        launchTimeRef.current = Date.now() - result.elapsed * 1000;
       }
+      serverMultRef.current = Math.max(1, result.multiplier);
       setGame(result);
       onBalance(result.balance_stars, result.balance_ton);
       onChanged();
@@ -482,7 +480,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
     setError("");
     try {
       const result = await api.cashoutRocket(telegramId, game.session_id);
-      clockRef.current = null;
+      launchTimeRef.current = 0;
       frozenRef.current = result.multiplier;
       crashedRef.current = false;
       serverMultRef.current = Math.max(1, result.multiplier);
@@ -519,7 +517,7 @@ export default function RocketGame({ balance, starsPerTon, telegramId, onBalance
         </b>
 
         <RocketScene
-          clockRef={clockRef}
+          launchTimeRef={launchTimeRef}
           frozenRef={frozenRef}
           crashedRef={crashedRef}
           multRef={multRef}
