@@ -74,8 +74,11 @@ export default function SnowfallGame({ balance, starsPerTon, onBalance, onChange
     try {
       const result = await api.hitSnowfall(telegramId, activeGame.session_id);
       setGame(result);
+      const landedAtChest = result.status === "chest";
+      const landingDistance = landedAtChest ? destination + 56 : destination;
+      if (landedAtChest) setFlightDistance(landingDistance);
       await animation;
-      setToolDistance(destination);
+      setToolDistance(landingDistance);
       tg?.HapticFeedback?.impactOccurred(result.progress > activeGame.progress ? "heavy" : "light");
       if (result.progress > activeGame.progress) tg?.HapticFeedback?.notificationOccurred("success");
       return result;

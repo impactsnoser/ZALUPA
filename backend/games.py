@@ -52,11 +52,11 @@ ROCKET_GROWTH = 0.044445
 ROCKET_MAX_MULTIPLIER = 100.0
 
 SNOWFALL_TOOLS = [
-    {"name": "Ледяная кирка", "emoji": "🪓", "rarity": "Обычная", "durability": 6},
-    {"name": "Ледяной молот", "emoji": "🔨", "rarity": "Необычная", "durability": 8},
-    {"name": "Полярная кирка", "emoji": "⛏️", "rarity": "Редкая", "durability": 10},
-    {"name": "Кристальный бур", "emoji": "💎", "rarity": "Эпическая", "durability": 12},
-    {"name": "Северная звезда", "emoji": "🌟", "rarity": "Легендарная", "durability": 15},
+    {"name": "Ледяная кирка", "emoji": "🪓", "rarity": "Обычная", "durability": 8},
+    {"name": "Ледяной молот", "emoji": "🔨", "rarity": "Необычная", "durability": 10},
+    {"name": "Полярная кирка", "emoji": "⛏️", "rarity": "Редкая", "durability": 12},
+    {"name": "Кристальный бур", "emoji": "💎", "rarity": "Эпическая", "durability": 14},
+    {"name": "Северная звезда", "emoji": "🌟", "rarity": "Легендарная", "durability": 16},
 ]
 SNOWFALL_BLOCKS = [
     {"name": "Хрупкий лёд", "emoji": "◇", "hp": 1, "kind": "ice"},
@@ -1113,6 +1113,33 @@ def _snowfall_state(game: SnowfallSession, user: User) -> dict:
     }
 
 
+def _snowfall_restore_durability(game: SnowfallSession, blocks: list[dict]) -> None:
+    """Keep legacy and new rounds playable until every remaining block is broken."""
+    remaining_hits = sum(
+        max(0, int(block.get("hp", 0)))
+        for block in blocks
+        if not block.get("destroyed", False)
+    )
+    if game.durability < remaining_hits:
+        extra = remaining_hits - game.durability
+        game.durability += extra
+        game.max_durability += extra
+
+
+def _snowfall_make_blocks(tool_durability: int) -> list[dict]:
+    """Generate eight blocks whose total hit points fit the pickaxe's durability."""
+    blocks: list[dict] = []
+    remaining_hits = tool_durability
+    for index in range(SNOWFALL_TARGET):
+        blocks_after = SNOWFALL_TARGET - index - 1
+        max_hp = remaining_hits - blocks_after
+        options = [block for block in SNOWFALL_BLOCKS if block["hp"] <= max_hp]
+        template = secrets.choice(options)
+        blocks.append({**template, "hp": template["hp"], "max_hp": template["hp"], "destroyed": False})
+        remaining_hits -= template["hp"]
+    return blocks
+
+
 class SnowfallRequest(BaseModel):
     telegram_id: int
     session_id: int | None = None
@@ -1126,12 +1153,19 @@ async def current_snowfall(
     init_data: str | None = Depends(get_init_data),
 ):
     verify_telegram_id(telegram_id, init_data)
-    user = await _user_by_telegram_id(session, telegram_id)
-    game = await session.scalar(
-        select(SnowfallSession)
-        .where(SnowfallSession.user_id == user.id, SnowfallSession.status.in_(["active", "chest"]))
-        .order_by(SnowfallSession.id.desc())
-    )
+    async with session.begin():
+        user = await _user_by_telegram_id(session, telegram_id)
+        game = await session.scalar(
+            select(SnowfallSession)
+            .where(SnowfallSession.user_id == user.id, SnowfallSession.status.in_(["active", "chest"]))
+            .order_by(SnowfallSession.id.desc())
+            .with_for_update()
+        )
+        if game and game.status == "chest" and game.progress < game.target:
+            blocks = json.loads(game.block_data)
+            _snowfall_restore_durability(game, blocks)
+            game.status = "active"
+            game.finished_at = None
     return {"game": _snowfall_state(game, user) if game else None}
 
 
@@ -1168,12 +1202,7 @@ async def start_snowfall(
                 break
             tool_roll -= weight
 
-        blocks = []
-        for _ in range(SNOWFALL_TARGET):
-            template = secrets.choice(SNOWFALL_BLOCKS)
-            # A tiny bit of variation makes each block feel less like a static row.
-            hp = template["hp"]
-            blocks.append({**template, "hp": hp, "max_hp": hp, "destroyed": False})
+        blocks = _snowfall_make_blocks(tool["durability"])
 
         user.balance_stars -= req.bet_stars
         _add_transaction(
@@ -1225,6 +1254,7 @@ async def hit_snowfall(
             raise HTTPException(status_code=409, detail="Раунд уже завершён")
 
         blocks = json.loads(game.block_data)
+        _snowfall_restore_durability(game, blocks)
         block = next((item for item in blocks if not item["destroyed"]), None)
         if block is not None:
             game.durability -= 1
@@ -1235,7 +1265,7 @@ async def hit_snowfall(
                 game.progress += 1
             game.block_data = json.dumps(blocks, ensure_ascii=False)
 
-        if game.progress >= game.target or game.durability <= 0:
+        if game.progress >= game.target:
             game.status = "chest"
             game.finished_at = datetime.now(timezone.utc)
         result = _snowfall_state(game, user)
@@ -1263,6 +1293,12 @@ async def open_snowfall_chest(
         if game is None:
             raise HTTPException(status_code=404, detail="Сундук не найден")
         if game.status == "opened":
+            return _snowfall_state(game, user)
+        if game.status == "chest" and game.progress < game.target:
+            blocks = json.loads(game.block_data)
+            _snowfall_restore_durability(game, blocks)
+            game.status = "active"
+            game.finished_at = None
             return _snowfall_state(game, user)
         if game.status != "chest":
             raise HTTPException(status_code=409, detail="Сначала завершите раунд")

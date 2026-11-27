@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { api, type BattleCase, type BattleRoom } from "../api";
+import { CASES as CASE_DEFS } from "../data/cases";
 import { fmt } from "../lib/format";
+import { PALETTES } from "../ui/GiftBox";
 import { Ton } from "../ui/Icons";
 
 type LobbyRoom = { battle_id: string; username: string; case: BattleCase; bet_stars: number; bet_ton: number; expires_at: number };
@@ -143,13 +145,31 @@ export default function CaseBattleGame({ telegramId, starsPerTon, onDeposit, onC
         {!battle || battle.status !== "waiting" ? (
           <>
             <div className="battle-case-list">
-              {cases.map((item) => (
-                <button key={item.id} className={`battle-case${selectedCase === item.id ? " selected" : ""}`} onClick={() => setSelectedCase(item.id)}>
-                  <span className="battle-case-box">🎁</span>
-                  <b>{item.title}</b>
-                  <span><Ton size={14} /> {fmt(item.price)}</span>
-                </button>
-              ))}
+              {cases.map((item) => {
+                const definition = CASE_DEFS.find((candidate) => candidate.id === item.id);
+                const palette = PALETTES[definition?.box ?? "ice"] ?? PALETTES.ice;
+                const featured = definition
+                  ? [...definition.prizes].sort((a, b) => b.value - a.value).slice(0, 3)
+                  : [];
+                return (
+                  <button
+                    key={item.id}
+                    className={`battle-case${selectedCase === item.id ? " selected" : ""}`}
+                    style={{ "--glow": palette.glow } as CSSProperties}
+                    onClick={() => setSelectedCase(item.id)}
+                  >
+                    <span className="case-highlights battle-case-art" aria-hidden="true">
+                      {featured.map((prize, index) => (
+                        <span className={`case-highlight case-highlight-${index + 1}`} key={prize.id}>
+                          <img src={`/prizes/${prize.image}`} alt="" loading="lazy" draggable={false} />
+                        </span>
+                      ))}
+                    </span>
+                    <b>{item.title}</b>
+                    <span><Ton size={14} /> {fmt(item.price)}</span>
+                  </button>
+                );
+              })}
             </div>
             <button className="btn gold wide" disabled={!selectedCase || busy} onClick={() => void act(() => api.createBattle(telegramId, selectedCase))}>
               Создать битву
