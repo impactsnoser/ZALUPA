@@ -74,101 +74,124 @@ function strokeCurve(ctx: CanvasRenderingContext2D, u: number, style: string | C
   ctx.stroke();
 }
 
-function drawRocket(ctx: CanvasRenderingContext2D, time: number, crashed: boolean) {
+function drawRocket(ctx: CanvasRenderingContext2D, time: number, crashed: boolean, pilot: HTMLImageElement) {
   ctx.save();
   ctx.scale(1.55, 1.55);
   if (crashed) ctx.globalAlpha = 0.35;
 
-  // пламя
+  // Длинный горячий след за ракетой.
   const flick = 0.86 + Math.sin(time * 22) * 0.14;
-  const flame = ctx.createLinearGradient(-74, 0, -22, 0);
-  flame.addColorStop(0, "rgba(255, 90, 40, 0)");
-  flame.addColorStop(0.3, "rgba(255, 106, 31, 0.85)");
-  flame.addColorStop(0.72, "#ffb02e");
-  flame.addColorStop(1, "#ffef9a");
+  const flame = ctx.createLinearGradient(-82, 0, -26, 0);
+  flame.addColorStop(0, "rgba(255, 82, 33, 0)");
+  flame.addColorStop(0.34, "rgba(255, 98, 35, 0.88)");
+  flame.addColorStop(0.76, "#ffb52e");
+  flame.addColorStop(1, "#fff3a8");
   ctx.fillStyle = flame;
   ctx.beginPath();
-  ctx.moveTo(-20, -11);
-  ctx.quadraticCurveTo(-46, -17 * flick, -74, 0);
-  ctx.quadraticCurveTo(-46, 17 * flick, -20, 11);
+  ctx.moveTo(-26, -9);
+  ctx.quadraticCurveTo(-51, -16 * flick, -82, 0);
+  ctx.quadraticCurveTo(-51, 16 * flick, -26, 9);
   ctx.closePath();
   ctx.fill();
 
-  ctx.fillStyle = "rgba(255, 250, 214, 0.85)";
+  ctx.fillStyle = "rgba(255, 251, 222, 0.9)";
   ctx.beginPath();
-  ctx.moveTo(-20, -4.5);
-  ctx.quadraticCurveTo(-38, -7 * flick, -56, 0);
-  ctx.quadraticCurveTo(-38, 7 * flick, -20, 4.5);
+  ctx.moveTo(-26, -4);
+  ctx.quadraticCurveTo(-46, -7 * flick, -62, 0);
+  ctx.quadraticCurveTo(-46, 7 * flick, -26, 4);
   ctx.closePath();
   ctx.fill();
 
-  // хвостовые плавники
-  const fin = ctx.createLinearGradient(0, -26, 0, 0);
-  fin.addColorStop(0, "#5d8cff");
-  fin.addColorStop(1, "#16267f");
+  // Плавники за кабиной.
+  const fin = ctx.createLinearGradient(0, -27, 0, 12);
+  fin.addColorStop(0, "#93e2ff");
+  fin.addColorStop(0.42, "#3789ff");
+  fin.addColorStop(1, "#2541bd");
   ctx.fillStyle = fin;
   ctx.beginPath();
-  ctx.moveTo(-2, -14);
-  ctx.quadraticCurveTo(-16, -26, -30, -25);
-  ctx.quadraticCurveTo(-19, -18, -15, -11);
+  ctx.moveTo(-20, -8);
+  ctx.quadraticCurveTo(-39, -27, -53, -24);
+  ctx.quadraticCurveTo(-46, -12, -34, 0);
   ctx.closePath();
   ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(-2, 14);
-  ctx.quadraticCurveTo(-16, 26, -30, 25);
-  ctx.quadraticCurveTo(-19, 18, -15, 11);
+  ctx.moveTo(-20, 8);
+  ctx.quadraticCurveTo(-39, 27, -53, 24);
+  ctx.quadraticCurveTo(-44, 10, -34, -1);
   ctx.closePath();
   ctx.fill();
 
-  // корпус
-  const body = ctx.createLinearGradient(0, -22, 0, 22);
-  body.addColorStop(0, "#8fb4ff");
-  body.addColorStop(0.4, "#4a76ff");
-  body.addColorStop(1, "#1a2f9e");
+  // Голубой иллюминатор и мишка-пилот.
+  ctx.save();
+  ctx.shadowColor = "rgba(76, 210, 255, 0.8)";
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = "rgba(52, 151, 255, 0.48)";
+  ctx.beginPath();
+  ctx.ellipse(-4, -22, 22, 21, -0.12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  if (pilot.complete && pilot.naturalWidth > 0) {
+    ctx.drawImage(pilot, -28, -51, 48, 48);
+  }
+  ctx.strokeStyle = "rgba(190, 245, 255, 0.96)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(-4, -22, 22, 21, -0.12, Math.PI * 1.04, Math.PI * 1.92);
+  ctx.stroke();
+
+  // Широкий корпус с острым носом, как у ракеты из референса.
+  const body = ctx.createLinearGradient(0, -20, 0, 18);
+  body.addColorStop(0, "#d7f7ff");
+  body.addColorStop(0.2, "#63caff");
+  body.addColorStop(0.57, "#2589ff");
+  body.addColorStop(1, "#2450d2");
   ctx.fillStyle = body;
-  ctx.beginPath();
-  ctx.ellipse(-6, 0, 21.5, 19.5, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // фиолетовый нос
-  const nose = ctx.createLinearGradient(0, -18, 0, 18);
-  nose.addColorStop(0, "#d79bff");
-  nose.addColorStop(0.42, "#9a52fa");
-  nose.addColorStop(1, "#5b1cb4");
-  ctx.fillStyle = nose;
-  ctx.beginPath();
-  ctx.moveTo(8, -16.5);
-  ctx.bezierCurveTo(21, -14.5, 30, -9, 34, -2);
-  ctx.quadraticCurveTo(36, 0, 34, 2);
-  ctx.bezierCurveTo(30, 9, 21, 14.5, 8, 16.5);
-  ctx.closePath();
-  ctx.fill();
-
-  // белое кольцо
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.72)";
+  ctx.strokeStyle = "#173caa";
   ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.ellipse(8, 0, 4.4, 15.5, 0, 0, Math.PI * 2);
+  ctx.moveTo(-34, -8);
+  ctx.quadraticCurveTo(-23, -19, -3, -18);
+  ctx.quadraticCurveTo(20, -17, 34, -7);
+  ctx.quadraticCurveTo(43, -1, 42, 1);
+  ctx.quadraticCurveTo(37, 12, 15, 17);
+  ctx.quadraticCurveTo(-13, 21, -31, 9);
+  ctx.quadraticCurveTo(-38, 2, -34, -8);
+  ctx.closePath();
+  ctx.fill();
   ctx.stroke();
 
-  // блик сверху корпуса
-  ctx.strokeStyle = "rgba(232, 242, 255, 0.5)";
-  ctx.lineWidth = 1.8;
-  ctx.lineCap = "round";
+  // Острие, металлический обод и блики корпуса.
+  const nose = ctx.createLinearGradient(21, -9, 43, 6);
+  nose.addColorStop(0, "#e8fbff");
+  nose.addColorStop(0.45, "#72dcff");
+  nose.addColorStop(1, "#2584f5");
+  ctx.fillStyle = nose;
   ctx.beginPath();
-  ctx.moveTo(-18, -13);
-  ctx.quadraticCurveTo(-6, -18, 4, -14.5);
+  ctx.moveTo(22, -12);
+  ctx.quadraticCurveTo(36, -8, 43, 0);
+  ctx.quadraticCurveTo(36, 10, 18, 13);
+  ctx.quadraticCurveTo(26, 2, 22, -12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,.8)";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-25, -10);
+  ctx.quadraticCurveTo(-9, -18, 8, -13);
   ctx.stroke();
-
-  // юбка сопла
-  ctx.fillStyle = "#2a3f9e";
   ctx.beginPath();
-  ctx.ellipse(-27, 0, 4, 12.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(-28, 0, 4, 11, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "#203fa8";
   ctx.fill();
 
+  // Кабина проходит поверх корпуса, удерживая пилота внутри ракеты.
+  ctx.strokeStyle = "rgba(208, 249, 255, 0.88)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(-4, -22, 22, 21, -0.12, Math.PI * 1.04, Math.PI * 1.92);
+  ctx.stroke();
   ctx.restore();
 }
-
 function drawCoin(ctx: CanvasRenderingContext2D, x: number, y: number, time: number, phase: number) {
   const bob = Math.sin(time * 1.8 + phase) * 5;
   const tilt = Math.sin(time * 1.2 + phase) * 0.16;
@@ -245,6 +268,8 @@ function RocketScene({
     if (!ctx) return;
 
     let raf = 0;
+    const pilot = new Image();
+    pilot.src = "/prizes/rocket-bear.png";
     let dpr = 1;
     let cssW = W;
     let cssH = H;
@@ -327,7 +352,7 @@ function RocketScene({
       ctx.save();
       ctx.translate(rx, ry);
       ctx.rotate(-0.42 - 0.1 * u);
-      drawRocket(ctx, time, crashedRef.current);
+      drawRocket(ctx, time, crashedRef.current, pilot);
       ctx.restore();
     };
 
